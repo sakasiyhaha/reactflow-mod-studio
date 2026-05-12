@@ -1,0 +1,66 @@
+/* 全局基础重置 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* --- 主题色彩（保留原有） --- */
+  --primary: #4D9EFF;
+  --secondary: #36D399;
+  --bg-canvas: #F5F9FF;
+  --bg-sidebar: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --border: #E2E8F0;
+  --text-primary: #2D3748;
+  --text-secondary: #718096;
+  --shadow-soft: 0 2px 8px rgba(0,0,0,0.08);
+
+  /* --- 布局尺寸 --- */
+  --sidebar-width: 190px;
+  --sidebar-min-width: 160px;
+  --props-panel-width: 200px;
+  --props-panel-min-width: 170px;
+  --panel-collapsed-width: 44px;
+  --panel-padding: 16px 14px;
+  --panel-collapsed-padding: 16px 8px;
+  --canvas-padding: 32px;
+
+  /* --- 折叠按钮 --- */
+  --collapse-btn-size: 24px;
+  --collapse-btn-font-size: 14px;
+
+  /* --- 节点样式 --- */
+  --node-min-width: 130px;
+  --node-max-width: 200px;
+  --node-padding: 10px 14px;
+  --node-border-radius: 8px;
+  --node-title-font-size: 13px;
+  --node-value-font-size: 18px;
+
+  /* --- 连接点 --- */
+  --handle-size: 10px;
+  --handle-border: none;
+
+  /* --- 动画时长 --- */
+  --transition-fast: 0.15s ease;
+  --transition-slow: 0.25s ease;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-canvas);
+}
+
+body {
+  font-family: 'Segoe UI', 'Noto Sans SC', system-ui, sans-serif;
+  color: var(--text-primary);
+}
+
+/* GPU硬件加速 */
+.react-flow__renderer {
+  transform: translateZ(0);
+}

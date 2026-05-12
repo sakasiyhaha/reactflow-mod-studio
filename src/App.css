@@ -1,0 +1,400 @@
+/* ========== 1. 全局布局层 ========== */
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  gap: 0;
+  background: var(--bg-canvas);
+}
+
+/* 边栏基础布局 */
+.sidebar, .props-panel {
+  background: var(--bg-sidebar);
+  transition: width var(--transition-slow);
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+  padding: var(--panel-padding);
+  position: relative;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-min-width);
+  z-index: 2;
+}
+.props-panel {
+  width: var(--props-panel-width);
+  min-width: var(--props-panel-min-width);
+  z-index: 2;
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+.sidebar-content, .props-content {
+  flex: 1;
+  padding-top: var(--canvas-padding);
+}
+.sidebar-footer, .props-footer {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.sidebar.collapsed, .props-panel.collapsed {
+  width: var(--panel-collapsed-width) !important;
+  min-width: var(--panel-collapsed-width) !important;
+  padding: var(--panel-collapsed-padding);
+}
+
+/* 折叠按钮基础样式 */
+.collapse-btn-wrapper {
+  position: absolute;
+  top: 18px;
+  z-index: 999;
+}
+.sidebar .collapse-btn-wrapper { right: 10px; }
+.props-panel .collapse-btn-wrapper { left: 10px; }
+.collapse-btn {
+  width: var(--collapse-btn-size);
+  height: var(--collapse-btn-size);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  outline: none;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1;
+  text-align: center;
+  font-size: var(--collapse-btn-font-size);
+}
+
+/* 中央画布基础布局 */
+.canvas-area {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  background: var(--bg-canvas);
+}
+
+/* 通用文字样式 */
+.sidebar h3, .props-panel h3 {
+  font-size: 16px;
+  color: var(--primary);
+  font-weight: 500;
+  text-align: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+.category-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  margin: 0 0 8px;
+  letter-spacing: 0.5px;
+}
+.sidebar button {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--node-border-radius);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--node-title-font-size);
+}
+.prop-row { margin-bottom: 14px; }
+.props-panel label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.props-panel input {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--node-border-radius);
+  color: var(--text-primary);
+  font-size: var(--node-title-font-size);
+}
+.prop-tip {
+  color: var(--text-secondary);
+  font-size: var(--node-title-font-size);
+  text-align: center;
+  padding: 20px 0;
+}
+.prop-info {
+  font-size: var(--node-title-font-size);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+.node-title {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--node-title-font-size);
+  font-weight: 500;
+}
+.node-value {
+  font-size: var(--node-value-font-size);
+  text-align: center;
+  font-weight: bold;
+  color: var(--text-primary);
+}
+
+/* ========== 2. 定位层 ========== */
+.react-flow__handle-left { transform: translate(-50%, -50%); }
+.react-flow__handle-right { transform: translate(50%, -50%); }
+
+/* ========== 3. 视觉样式层 ========== */
+.custom-node {
+  position: relative;
+  width: max-content;
+  border: 1px solid var(--border);
+  border-radius: var(--node-border-radius);
+  padding: var(--node-padding);
+  background: var(--bg-card);
+  min-width: var(--node-min-width);
+  max-width: var(--node-max-width);
+  box-shadow: var(--shadow-soft);
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.node-input { border-color: var(--primary); }
+.node-output { border-color: var(--secondary); }
+
+.react-flow__node.selected .custom-node {
+  border-color: var(--primary) !important;
+  box-shadow: inset 0 0 0 1.5px var(--primary) !important;
+}
+
+.react-flow__handle {
+  width: var(--handle-size);
+  height: var(--handle-size);
+  border-radius: 50%;
+  background: #fff;
+  border: var(--handle-border);
+}
+.react-flow__handle.source { background: var(--primary); }
+.react-flow__handle.target { background: var(--secondary); }
+.react-flow__handle.connecting { background: #EF4444; }
+
+.react-flow__connection-line {
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+.react-flow__connection-line.invalid {
+  stroke: #EF4444;
+  stroke-dasharray: 6 4;
+}
+.react-flow__edge-path {
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+.react-flow__controls-button {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.react-flow__background-dot { color: var(--border); }
+
+/* ========== 4. 交互动画层 ========== */
+.react-flow__handle { transition: transform var(--transition-fast); }
+.collapse-btn, .sidebar button, .props-panel input { transition: all var(--transition-fast); }
+
+.react-flow__handle-left { transform: translate(-50%, -50%) scale(1); }
+.react-flow__handle-right { transform: translate(50%, -50%) scale(1); }
+.react-flow__handle-left:hover { transform: translate(-50%, -50%) scale(1.2); }
+.react-flow__handle-right:hover { transform: translate(50%, -50%) scale(1.2); }
+.react-flow__node.selected .react-flow__handle-left { transform: translate(-50%, -50%) scale(1.1); }
+.react-flow__node.selected .react-flow__handle-right { transform: translate(50%, -50%) scale(1.1); }
+
+.collapse-btn:hover, .sidebar button:hover {
+  background: var(--primary); color: #fff; border-color: var(--primary);
+}
+.props-panel input:focus { outline: none; border-color: var(--primary); }
+@keyframes pulse-red { 0%{opacity:1;} 50%{opacity:0.6;} 100%{opacity:1;} }
+
+/* ========== 5. 光标修正 ========== */
+.react-flow__pane { cursor: default !important; }
+.react-flow__pane.dragging { cursor: grabbing !important; }
+.react-flow__renderer { cursor: grab; }
+.react-flow__renderer:active { cursor: grabbing; }
+
+/* 彻底禁止节点内文字选中，避免 I‑beam 光标 */
+.react-flow__node {
+  user-select: none;
+  /* 强制节点整体使用默认箭头，消除文本光标残余 */
+  cursor: default !important;
+}
+
+/* 节点内所有子元素继承默认箭头（输入框除外） */
+.custom-node,
+.custom-node * {
+  cursor: inherit;
+}
+
+/* 如果未来节点内需要可编辑输入框，保留标准的文本编辑光标 */
+.custom-node input,
+.custom-node textarea,
+.custom-node [contenteditable="true"] {
+  cursor: text;
+}
+
+/* ========== 6. 右键菜单样式 ========== */
+.context-menu {
+  position: fixed;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  z-index: 1000;
+  padding: 4px 0;
+}
+.context-menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #2D3748;
+  transition: background 0.15s ease;
+}
+.context-menu-item:hover {
+  background: #F5F9FF;
+}
+.context-menu-item.separator {
+  border-bottom: 1px solid #E2E8F0;
+}
+
+/* ========== 7. 响应式层 ========== */
+@media (max-width: 800px) {
+  .app-container { flex-direction: column; }
+  .sidebar, .props-panel {
+    width: 100% !important;
+    max-height: 180px;
+    padding: var(--panel-padding);
+  }
+  .sidebar.collapsed, .props-panel.collapsed {
+    max-height: 44px;
+    padding: var(--panel-collapsed-padding);
+  }
+}
+
+/* ========== 8. 批量连线模式样式 ========== */
+.batch-connect-active .react-flow__node.selected .custom-node {
+    animation: batchPulse 1.2s ease-in-out infinite;
+    border-color: #6366F1 !important;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.4) !important;
+}
+
+@keyframes batchPulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(99, 102, 241, 0.3); }
+    50% { box-shadow: 0 0 18px rgba(99, 102, 241, 0.6); }
+}
+
+.batch-connect-hint {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #6366F1;
+    color: #fff;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+    z-index: 2000;
+    pointer-events: none;
+    animation: batchHintFadeIn 0.2s ease;
+}
+
+@keyframes batchHintFadeIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+/* ========== 节点内联控件样式 ========== */
+.node-controls {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stepper-row,
+.toggle-row,
+.select-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stepper-label,
+.toggle-label,
+.select-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 40px;
+}
+
+.stepper-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-canvas);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.stepper-value {
+  font-size: 13px;
+  min-width: 30px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.toggle-btn {
+  padding: 2px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.select-dropdown {
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+/* ========== 侧边栏按钮样式 ========== */
+.sidebar-action-btn {
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  margin-bottom: 0;
+}
+
+.sidebar-action-btn:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
