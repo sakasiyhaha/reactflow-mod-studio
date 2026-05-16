@@ -66,9 +66,26 @@ export type EditorEvent =
   | { type: 'DISTRIBUTE_HORIZONTAL' }
   | { type: 'DISTRIBUTE_VERTICAL' }
   | { type: 'AUTO_LAYOUT' }
-
+  // ---------- 项目配置 ----------
+  | { type: 'PROJECT_CONFIG_TOGGLE_PANEL' }                                               // 切换设置面板显示/隐藏
+  | { type: 'PROJECT_CONFIG_CHANGED'; config: Record<string, unknown> }                  // 项目配置已变更
+  // ---------- 连接菜单 ----------
+  | { type: 'CONNECTION_MENU_OPEN'; payload: {
+      x: number;
+      y: number;
+      sourceNodeId: string;
+      sourceHandleId: string;
+      availableTypes: any[];
+      direction: 'forward' | 'reverse';
+    } }
+  | { type: 'CONNECTION_MENU_CLOSE' }
   // ---------- 内部同步 ----------
-  | { type: 'APPLY_NODE_CHANGES'; nodes: CustomNode[] };               // 将 React Flow 的节点变化直接应用到状态（如拖拽过程中的中间状态）
+  | { type: 'APPLY_NODE_CHANGES'; nodes: CustomNode[] }
+  // ---------- 错误处理 ----------
+  | { type: 'ERROR_OCCURRED'; error: { message: string; type?: 'info' | 'warning' | 'error'; details?: any } }
+  // ---------- 浮动搜索 ----------
+  | { type: 'FLOATING_SEARCH_OPEN'; payload: { x: number; y: number } }
+  | { type: 'FLOATING_SEARCH_CLOSE' };
 
 // ==================== 编辑器核心状态 ====================
 /** 编辑器的完整状态快照 */

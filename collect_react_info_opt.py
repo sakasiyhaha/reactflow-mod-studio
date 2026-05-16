@@ -2,9 +2,9 @@
 """
 React 项目信息收集脚本（优化版）
 - 自动生成结构化快照报告，供 AI 分析
-- 排除 SVG 等大体积非代码文件的内容，仅记录路径
-- 智能处理含空格的路径（如 'tutorial zone'）
-- 自动包含所有非忽略的顶级目录，无需手工维护目录列表
+- 排除 SVG、文档、许可证等非核心文件的内容，仅记录路径
+- 智能处理含空格的路径
+- 自动包含所有非忽略的顶级目录
 """
 
 import os
@@ -22,7 +22,7 @@ OUTPUT_FILE = PROJECT_ROOT / "react_project_snapshot.txt"
 TEXT_EXTENSIONS = {
     ".js", ".jsx", ".ts", ".tsx",
     ".css", ".scss", ".less",
-    ".html", ".json", ".md", ".txt", ".xml",
+    ".html", ".json", ".xml",
     ".yaml", ".yml",
 }
 
@@ -33,11 +33,16 @@ SKIP_PATTERNS = {
     "__pycache__", ".idea", ".vs",
 }
 
+# 不重要的说明文件（不读取内容，即使扩展名在 TEXT_EXTENSIONS 中）
+SKIP_DOC_FILES = {
+    "README.md", "LICENSE", "CONTRIBUTING.md", "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md", "SECURITY.md", ".gitignore", ".gitattributes",
+    "package-lock.json",  # 通常巨大且不重要
+}
+
 # 即使在上面的忽略列表中，这些文件也强制读取内容
 ALWAYS_INCLUDE = {
-    "package.json", "package-lock.json",
-    "vite.config.js", "vite.config.ts",
-    "index.html",
+    "package.json", "vite.config.js", "vite.config.ts", "index.html",
 }
 
 # 敏感文件列表：只记录文件名，不读取内容
@@ -58,12 +63,19 @@ def should_skip(name: str, extra_skips: set = None) -> bool:
 
 def should_read_content(file_path: Path) -> bool:
     """判断是否应读取文件内容"""
+    # 强制包含的文件
     if file_path.name in ALWAYS_INCLUDE:
         return True
+    # 敏感文件不读内容
     if file_path.name in SENSITIVE_FILES:
         return False
+    # 不重要的说明文件不读内容
+    if file_path.name in SKIP_DOC_FILES:
+        return False
+    # 非文本扩展名不读
     if file_path.suffix.lower() not in TEXT_EXTENSIONS:
         return False
+    # 文件太大不读
     try:
         size_kb = file_path.stat().st_size / 1024
         if size_kb > MAX_FILE_SIZE_KB:
@@ -93,7 +105,6 @@ def get_lang(suffix: str) -> str:
         '.css': 'css', '.scss': 'scss', '.less': 'less',
         '.html': 'html',
         '.json': 'json',
-        '.md': 'markdown',
         '.xml': 'xml',
         '.yaml': 'yaml', '.yml': 'yaml',
     }
@@ -135,7 +146,7 @@ def get_all_top_level_dirs() -> list:
 
 # ==================== 内容收集函数 ====================
 def collect_configs() -> str:
-    """收集配置文件内容"""
+    """收集配置文件内容（排除不重要文件如 package-lock.json）"""
     config_files = [
         PROJECT_ROOT / "package.json",
         PROJECT_ROOT / "vite.config.js",
@@ -149,16 +160,16 @@ def collect_configs() -> str:
     seen = set()
     unique_files = []
     for f in config_files:
-        if f not in seen:
-            seen.add(f)
-            unique_files.append(f)
+        if f.exists() and f.name not in SKIP_DOC_FILES:
+            if f not in seen:
+                seen.add(f)
+                unique_files.append(f)
 
     content = []
     for cfg in unique_files:
-        if cfg.exists():
-            rel = cfg.relative_to(PROJECT_ROOT)
-            lang = get_lang(cfg.suffix)
-            content.append(f"\n### {rel}\n```{lang}\n{safe_read(cfg)}\n```")
+        rel = cfg.relative_to(PROJECT_ROOT)
+        lang = get_lang(cfg.suffix)
+        content.append(f"\n### {rel}\n```{lang}\n{safe_read(cfg)}\n```")
     return "".join(content)
 
 def collect_entry_html() -> str:
@@ -168,7 +179,7 @@ def collect_entry_html() -> str:
     return "index.html 未找到"
 
 def collect_source_files(extra_dirs: list) -> str:
-    """收集 src/ 及额外目录下的所有源文件（排除 SVG 内容）"""
+    """收集 src/ 及额外目录下的所有源文件（排除文档、LICENSE 等）"""
     parts = []
     if extra_dirs:
         scan_dirs = extra_dirs
@@ -184,25 +195,30 @@ def collect_source_files(extra_dirs: list) -> str:
         total += len(files)
         for fp in sorted(files):
             rel = fp.relative_to(PROJECT_ROOT)
+            # 排除不重要的说明文件
+            if fp.name in SKIP_DOC_FILES:
+                parts.append(f"\n### {rel}\n```\n[说明文件，内容未显示]\n```")
+                continue
             if should_read_content(fp):
                 lang = get_lang(fp.suffix)
                 parts.append(f"\n### {rel}\n```{lang}\n{safe_read(fp)}\n```")
             else:
-                # 仅记录文件名，不显示内容
                 parts.append(f"\n### {rel}\n```\n[文件未显示内容]\n```")
     print(f"📁 共扫描 {len(scan_dirs)} 个目录，{total} 个文件")
     return "".join(parts)
 
 def collect_other_files() -> str:
-    """收集 .gitignore, README, LICENSE 等杂项"""
-    others = [
-        PROJECT_ROOT / ".gitignore",
-        PROJECT_ROOT / "README.md",
-        PROJECT_ROOT / "LICENSE",
+    """收集杂项文件，但排除不重要的说明文件（已全部由 SKIP_DOC_FILES 覆盖）"""
+    # 此处不再单独收集 README.md、LICENSE 等，因为已在 SKIP_DOC_FILES 中排除
+    # 保留可能需要的非文档杂项（如 .editorconfig），按需添加
+    other_candidates = [
+        PROJECT_ROOT / ".editorconfig",
+        PROJECT_ROOT / ".prettierrc",
+        PROJECT_ROOT / ".eslintrc.js",
     ]
     parts = []
-    for f in others:
-        if f.exists():
+    for f in other_candidates:
+        if f.exists() and f.name not in SKIP_DOC_FILES:
             rel = f.relative_to(PROJECT_ROOT)
             parts.append(f"\n### {rel}\n```\n{safe_read(f)}\n```")
     return "".join(parts)
@@ -242,7 +258,7 @@ def generate_report(extra_skips: set, extra_dirs: list) -> str:
     lines.append("\n\n## 4. 源代码与文档文件\n")
     lines.append(collect_source_files(extra_dirs))
 
-    # 其他
+    # 其他文件（不再包含 README、LICENSE 等）
     lines.append("\n\n## 5. 其他文件\n")
     lines.append(collect_other_files())
 

@@ -1,15 +1,16 @@
 // src/components/Sidebar.tsx
 // 左侧边栏组件 —— 包含节点库、功能按钮（自动布局、小地图、保存/加载、项目设置）
+// 项目设置按钮现在通过总线事件驱动，不再依赖 onToggleConfig / configPanelVisible props
+// 这消除了 Sidebar 对"项目设置"这个具体功能的直接依赖
 
 import CollapseButton from './CollapseButton';
 import NodeLibrary from './NodeLibrary';
+import { useEditorBusContext } from '../bus/EditorBusContext'; // 获取总线实例
 
 interface SidebarProps {
     collapsed: boolean;       // 是否折叠
     onToggle: () => void;     // 切换折叠状态
     addNode: (type: string) => void;          // 添加节点回调
-    onToggleConfig: () => void;               // 切换项目设置面板
-    configPanelVisible: boolean;              // 项目设置面板是否可见
     onSaveWorkflow: () => void;               // 保存工作流
     onLoadWorkflow: () => void;               // 加载工作流
     onAutoLayout: () => void;                 // 自动布局
@@ -19,13 +20,16 @@ interface SidebarProps {
 
 export default function Sidebar({
     collapsed, onToggle, addNode,
-    onToggleConfig, configPanelVisible,
     onSaveWorkflow,
     onLoadWorkflow,
     onAutoLayout,
     onToggleMinimap,
     showMinimap,
 }: SidebarProps) {
+    // 获取总线实例，用于派发项目设置面板切换事件
+    // Sidebar 不需要知道"谁来处理这个事件"，只需要表达"用户点击了设置按钮"
+    const bus = useEditorBusContext();
+
     return (
         <div className={`sidebar${collapsed ? ' collapsed' : ''}`}>
             {/* 折叠按钮 */}
@@ -59,28 +63,30 @@ export default function Sidebar({
                 </div>
             )}
 
-            {/* 项目设置按钮（折叠和展开显示方式不同） */}
+            {/* 
+                项目设置按钮
+                - 展开状态：显示完整按钮
+                - 折叠状态：仅显示图标
+                - 点击时派发 PROJECT_CONFIG_TOGGLE_PANEL 事件
+                - 面板的显示/隐藏由 App.tsx 监听同一事件来处理
+                - Sidebar 不再需要知道"面板当前是否打开"（configPanelVisible）
+            */}
             <div className="sidebar-footer">
                 {!collapsed ? (
                     <button
                         className="sidebar-action-btn"
-                        onClick={onToggleConfig}
-                        style={{
-                            marginBottom: 8,
-                            background: configPanelVisible ? 'var(--primary)' : 'transparent',
-                            color: configPanelVisible ? '#fff' : 'var(--text-primary)',
-                        }}
+                        onClick={() => bus.dispatch({ type: 'PROJECT_CONFIG_TOGGLE_PANEL' })}
+                        style={{ marginBottom: 8 }}
                     >
                         ⚙️ 项目设置
                     </button>
                 ) : (
-                    // 折叠状态下仅显示一个图标
                     <div
-                        onClick={onToggleConfig}
+                        onClick={() => bus.dispatch({ type: 'PROJECT_CONFIG_TOGGLE_PANEL' })}
                         style={{
                             writingMode: 'vertical-rl', textOrientation: 'mixed',
                             padding: '12px 0',
-                            color: configPanelVisible ? 'var(--primary)' : 'var(--text-secondary)',
+                            color: 'var(--text-secondary)',
                             fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
                         }}
                     >

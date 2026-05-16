@@ -1,6 +1,7 @@
 // src/bus/useEditorBus.ts
 // 事件总线 React Hook 实现
 // 使用 useReducer 管理状态，提供 dispatch / subscribe / getState
+// 修复：确保订阅者在微任务中读取到的 stateRef 是最新状态（解决历史记录、自动保存等 Mod 拿到旧状态的问题）
 
 import { useReducer, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { EditorState, EditorEvent, EditorBus, Listener } from './types';
@@ -173,6 +174,8 @@ export function useEditorBus() {
 
   // 始终保持最新的 state 引用，供回调中同步读取
   const stateRef = useRef(state);
+  // 注意：stateRef 的更新不再依赖 useEffect，而是在 busDispatch 中手动同步
+  // 这里仅用于初始化，后续更新完全由 busDispatch 负责
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -181,10 +184,15 @@ export function useEditorBus() {
   const listenersRef = useRef<Map<number, Listener>>(new Map());
   const nextIdRef = useRef(0);
 
-  // 派发事件：先通过 reducer 更新状态，再异步通知所有订阅者
+  // 派发事件：修复核心 bug —— 确保订阅者拿到的是更新后的最新状态
   const busDispatch = useCallback((event: EditorEvent) => {
-    dispatch(event); // 同步更新 state（但 state 值在下一次渲染才生效）
-    // 在微任务中通知订阅者，确保它们读到的是更新后的 state
+    // 关键修复：手动调用 reducer 计算新状态（reducer 是纯函数，无副作用）
+    const newState = editorReducer(stateRef.current, event);
+    // 立即更新 stateRef，保证在微任务执行前 stateRef 已是最新
+    stateRef.current = newState;
+    // 调用 React 的 dispatch，触发组件重渲染（同步更新 UI）
+    dispatch(event);
+    // 在微任务中通知所有订阅者，此时 stateRef.current 已经是最新状态
     Promise.resolve().then(() => {
       const currentState = stateRef.current;
       listenersRef.current.forEach((listener) => {

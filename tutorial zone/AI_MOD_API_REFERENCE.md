@@ -47,7 +47,7 @@ interface EditorState {
 
 ## 3. 完整事件列表（EditorEvent）
 
-所有事件均为 `{ type: string, ... }` 的可辨识联合类型。
+所有事件均为 `{ type: string, ... }` 的可辨识联合类型。以下按功能分组列出。
 
 ### 节点操作
 | 事件类型 | 说明 | Payload |
@@ -109,16 +109,52 @@ interface EditorState {
 | `DISTRIBUTE_VERTICAL` | 垂直均分（需 ≥3 个节点） |
 | `AUTO_LAYOUT` | 自动布局 |
 
-### 内部同步
+### 项目配置
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
-| `APPLY_NODE_CHANGES` | 直接同步节点数组（通常由适配器使用） | `{ nodes: CustomNode[] }` |
+| `PROJECT_CONFIG_TOGGLE_PANEL` | 切换设置面板显示/隐藏 | 无 |
+| `PROJECT_CONFIG_CHANGED` | 项目配置已变更 | `{ config: Record<string, unknown> }` |
+
+### 连接菜单
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `CONNECTION_MENU_OPEN` | 打开连接节点菜单 | `{ x: number; y: number; sourceNodeId: string; sourceHandleId: string; availableTypes: NodeTemplate[]; direction: 'forward' | 'reverse' }` |
+| `CONNECTION_MENU_CLOSE` | 关闭连接菜单 | 无 |
+
+### 浮动搜索
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `FLOATING_SEARCH_OPEN` | 打开浮动搜索框 | `{ x: number; y: number }` |
+| `FLOATING_SEARCH_CLOSE` | 关闭浮动搜索框 | 无 |
+
+### 内部同步（通常不直接使用）
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `APPLY_NODE_CHANGES` | 直接同步节点数组（由适配器使用） | `{ nodes: CustomNode[] }` |
 
 ---
 
-## 4. 节点模板注册 API
+## 4. 内置 Mod 列表及其 id
 
-提供以下函数（从 `../src/registry/nodeTemplateRegistry` 导入）：
+| 内置 Mod | id | 主要功能 |
+|----------|-----|----------|
+| 历史记录 | `history` | 撤销/重做，监听 Ctrl+Z/Y |
+| 批量连线 | `batch-connect` | 多选节点后批量连线 |
+| 对齐与自动布局 | `alignment` | 左/右/顶/底对齐，水平/垂直居中，水平/垂直均分，自动布局 |
+| 剪贴板 | `clipboard` | 复制/剪切/粘贴（保留连线），全选，Ctrl+C/V/X/A |
+| 重连管理 | `reconnect` | 边重连时抑制连接菜单，管理重连状态 |
+| 项目配置 | `project-config` | 设置面板开关，配置持久化 |
+| 节点生命周期 | `node-lifecycle` | 将 React Flow 回调适配为事件（提供工具函数） |
+| 连接菜单 | `connection-menu` | 拖线到空白时弹出节点选择菜单 |
+| 画布右键菜单 | `canvas-context-menu` | 节点/画布右键菜单判断逻辑 |
+| 浮动搜索 | `floating-search` | 双击画布空白弹出搜索框 |
+| 工作流导入导出 | `workflow-io` | JSON 导入/导出，支持替换处理器（YAML 等） |
+
+---
+
+## 5. 节点模板注册 API
+
+从 `src/registry/nodeTemplateRegistry` 导入：
 
 - **`getAllTemplates(): NodeTemplate[]`**  
   获取当前所有节点模板（内置 + 自定义，自定义覆盖同类型内置模板）。
@@ -139,7 +175,7 @@ interface NodeTemplate {
     type: string;                                        // 模板唯一标识（如 'numberInput'）
     title: string;                                       // 显示名称
     category: string;                                    // 分类（中文）
-    icon: string;                                        // 表情符号
+    icon: string;                                        // 表情符号或图片路径
     color: string;                                       // 主题色
     styleClass?: string;                                 // 额外 CSS 类名
     inputs?: PortDefinition[];                           // 输入端口
@@ -161,9 +197,9 @@ interface PortDefinition {
 
 ---
 
-## 5. 常用工具函数
+## 6. 常用工具函数
 
-从 `../src/utils` 导入：
+从 `src/utils` 导入：
 
 - **`generateNodeId(): string`**  
   生成全局唯一节点 ID（格式 `node_1`, `node_2` ...）。
@@ -177,15 +213,66 @@ interface PortDefinition {
 - **`syncIdCounter(nodes: { id: string }[]): void`**  
   根据现有节点 ID 同步全局 ID 计数器，防止新建节点冲突。
 
+- **`exportWorkflow(nodes: any[], edges: any[]): void`**  
+  将工作流导出为 JSON 文件下载（底层函数，通常使用 `mod-workflow-io` 更灵活）。
+
+- **`importWorkflow(): Promise<{ nodes: any[]; edges: any[] }>`**  
+  从 JSON 文件导入工作流（底层函数）。
+
 ---
 
-## 6. Mod 编写模式
+## 7. 可扩展的工具函数（供继承使用）
 
-### 6.1 订阅事件并执行副作用
+以下内置 Mod 导出了可复用的函数，你可以在自己的 Mod 中直接调用或包装它们：
 
+### `mod-node-lifecycle`
 ```typescript
-import type { EditorMod } from '../src/bus/types';
+export function createOnNodesChange(bus: EditorBus): (changes: any[]) => void;
+export function createOnEdgesChange(bus: EditorBus): (changes: any[]) => void;
+export function createOnConnect(bus: EditorBus): (connection: any) => void;
+export function createOnReconnect(bus: EditorBus): (oldEdge: any, newConnection: any) => void;
+```
 
+### `mod-connection-menu`
+```typescript
+export function createConnectionEndHandler(bus: EditorBus): (event: any, connectionState: any) => void;
+export function showConnectionMenu(bus: EditorBus, params: {...}): void;
+export function hideConnectionMenu(bus: EditorBus): void;
+```
+
+### `mod-canvas-context-menu`
+```typescript
+export function getContextMenuTarget(
+    screenX: number,
+    screenY: number,
+    screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number },
+    getIntersectingNodes: (rect: { x: number; y: number; width: number; height: number }) => Node[],
+    nodes: Node[]
+): ContextMenuTarget;
+```
+
+### `mod-floating-search`
+```typescript
+export function openSearch(bus: EditorBus, x: number, y: number): void;
+export function closeSearch(bus: EditorBus): void;
+```
+
+### `mod-workflow-io`
+```typescript
+export function setWorkflowIOHandlers(
+    exportHandler: (nodes: any[], edges: any[]) => void | Promise<void>,
+    importHandler: (bus: EditorBus) => void | Promise<void>
+): void;
+export function exportWorkflowData(nodes: any[], edges: any[]): Promise<void>;
+export function importWorkflowData(bus: EditorBus): Promise<void>;
+```
+
+---
+
+## 8. Mod 编写模式示例
+
+### 8.1 订阅事件并执行副作用
+```typescript
 export const myMod: EditorMod = {
     id: 'my-mod',
     init(bus) {
@@ -193,63 +280,92 @@ export const myMod: EditorMod = {
             if (event.type === 'NODE_ADDED') {
                 console.log('新节点：', event.node.id);
             }
-            // 也可以根据其他事件类型处理
         });
-        return () => unsub();  // 清理订阅
+        return () => unsub();
     }
 };
 ```
 
-### 6.2 主动派发事件
-
+### 8.2 主动派发事件
 ```typescript
 bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: ['node_1', 'node_2'] });
 bus.dispatch({ type: 'AUTO_LAYOUT' });
 ```
 
-### 6.3 注册自定义节点模板
-
+### 8.3 注册自定义节点模板
 ```typescript
 import { registerNodeTemplates } from '../src/registry/nodeTemplateRegistry';
 
 export const myTemplateMod: EditorMod = {
     id: 'my-templates',
     init() {
-        registerNodeTemplates([
-            {
-                type: 'myInput',
-                title: '我的输入',
-                category: '自定义',
-                icon: '📥',
-                color: '#8E44AD',
-                outputs: [{ id: 'out', label: '数据', type: 'number', position: 'right' }],
-                defaultData: { value: 0, label: '输入' },
-                properties: { value: { type: 'number', default: 0 } }
-            }
-        ]);
-        return () => {}; // 无需清理或调用 resetTemplates
+        registerNodeTemplates([/* NodeTemplate 数组 */]);
+        return () => {};
     }
 };
 ```
 
-### 6.4 完全替换内置模板
-
+### 8.4 覆盖内置 Mod（以工作流 IO 为例，支持 YAML）
 ```typescript
-import { setBuiltInTemplates, resetBuiltInTemplates } from '../src/registry/nodeTemplateRegistry';
+import { setWorkflowIOHandlers } from '../src/mods/mod-workflow-io';
+import yaml from 'js-yaml';
 
-export const replaceTemplatesMod: EditorMod = {
-    id: 'replace-builtin',
-    init() {
-        setBuiltInTemplates([ /* 全新的 NodeTemplate 数组 */ ]);
-        return () => resetBuiltInTemplates(); // 卸载时恢复默认
-    }
+export const yamlWorkflowMod: EditorMod = {
+    id: 'workflow-io',   // 相同 id 覆盖
+    init(bus) {
+        setWorkflowIOHandlers(
+            async (nodes, edges) => { /* 导出 YAML */ },
+            async (b) => { /* 导入 YAML */ }
+        );
+        return () => { /* 可选恢复默认 */ };
+    },
 };
+```
 
-## 7. 重要注意事项
+---
 
-- Mod 的 `id` 必须全局唯一，建议使用带有命名空间的标识（如 `'my-plugin-logger'`）。
+## 9. 防御降级机制
+
+当自定义 Mod 在 `init` 中抛出异常时，系统会：
+- 输出红色错误日志。
+- 如果存在同名的内置 Mod，自动回退并初始化内置版本（输出黄色警告）。
+- 继续初始化其他 Mod，不影响整体功能。
+
+因此，即使你编写的 Mod 有 bug，编辑器依然可运行。
+
+---
+
+## 10. 重要注意事项
+
+- Mod 的 `id` 必须全局唯一，建议使用命名空间（如 `'my-plugin-logger'`）。
 - `init` 函数中返回的清理函数用于移除事件监听、定时器等，避免内存泄漏。
-- 事件驱动是核心，尽量通过 `dispatch` 改变状态，不要直接操作 DOM 或 React 状态（除非有特殊需求）。
-- 节点模板注册中心会自动去重，多次注册同类型模板不会产生重复条目。
+- 事件驱动是核心，尽量通过 `dispatch` 改变状态，不要直接操作 DOM 或 React 状态。
+- 节点模板注册中心会自动去重，多次注册同类型模板不会重复。
 - 若要覆盖内置模板，使用 `setBuiltInTemplates` 并记得在清理时恢复。
 - 所有事件定义见 `src/bus/types.ts`，可随时查阅最新完整列表。
+
+---
+
+## 附录：常用 NodeTemplate 示例
+
+```typescript
+{
+    type: 'adder',
+    title: '加法器',
+    category: '运算',
+    icon: '➕',
+    color: '#E63946',
+    inputs: [
+        { id: 'a', label: 'A', position: 'left', type: 'number' },
+        { id: 'b', label: 'B', position: 'left', type: 'number' }
+    ],
+    outputs: [{ id: 'sum', label: '和', position: 'right', type: 'number' }],
+    defaultData: { value: 0, label: '加法器' },
+    properties: { value: { type: 'number', default: 0 } },
+    inlineControls: [
+        { key: 'mode', type: 'select-dropdown', label: '模式', options: ['A+B', 'A-B'], default: 'A+B' }
+    ]
+}
+```
+
+更多端口定义和控件配置请参考 `NODE_TEMPLATE_API.md`。

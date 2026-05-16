@@ -106,6 +106,14 @@ return () => {
 };
 ```
 
+### 3.3 获取当前所有模板
+
+```typescript
+import { getAllTemplates } from '../src/registry/nodeTemplateRegistry';
+
+const allTemplates = getAllTemplates(); // 内置 + 自定义，自定义覆盖同类型内置
+```
+
 ---
 
 ## 4. 端口在组件中的渲染
@@ -158,7 +166,7 @@ function getPortType(nodes, nodeId, handleId, handleKind): string | null {
 
 当你从输入端口拖线到空白区域时，系统会弹出反向连接菜单，帮助你快速创建能连接到该输入端口的节点。
 
-在 `src/hooks/useConnectionEndHandler.ts` 中：
+在 `src/hooks/useConnectionEndHandler.ts`（已被 Mod 替代，逻辑迁移至 `mod-connection-menu.ts`）中：
 
 ```typescript
 const targetPort = sourceTemplate.inputs?.find(i => i.id === fromHandle.id);
@@ -221,12 +229,29 @@ export const myCustomNodeMod: EditorMod = {
 
 ---
 
-## 8. 总结
+## 8. 内联控件（Inline Controls）
+
+模板中可以定义 `inlineControls` 数组，用于在节点内部直接渲染可交互控件（步进器、开关、下拉选择），无需打开属性面板。
+
+```typescript
+inlineControls: [
+    { key: 'value', type: 'number-stepper', label: '数值', min: -100, max: 100, step: 1 },
+    { key: 'enable', type: 'boolean-toggle', label: '启用', default: true },
+    { key: 'mode', type: 'select-dropdown', label: '模式', options: ['A+B', 'A-B'], default: 'A+B' }
+]
+```
+
+每个控件对应节点数据中的一个字段（`key`），修改时自动派发 `NODE_DATA_CHANGED` 事件并传播 `value` 到下游（如果 `propagate` 未禁用）。
+
+---
+
+## 9. 总结
 
 - 节点端口的全部信息均来自 `NodeTemplate` 的 `inputs` / `outputs` 或 `handles` 字段。
 - 通过 `registerNodeTemplates` 可轻松添加自定义端口配置。
 - `GenericNode` 会自动渲染这些端口，无需修改渲染代码。
 - 连接校验和反向连接菜单均依赖端口类型进行过滤。
 - 充分利用 `'*'` 通配符可以创建灵活的通用端口。
+- 内联控件提供了更便捷的交互方式。
 
-> 更多信息可参阅 `src/nodeTemplates.ts`（类型定义）、`src/registry/nodeTemplateRegistry.ts`（注册中心）以及 `CUSTOM_MODS.md`（Mod 开发指南）。。
+> 更多信息可参阅 `src/nodeTemplates.ts`（类型定义）、`src/registry/nodeTemplateRegistry.ts`（注册中心）以及 `CUSTOM_MODS.md`（Mod 开发指南）。

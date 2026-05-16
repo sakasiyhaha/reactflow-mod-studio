@@ -24,22 +24,25 @@
 ## 2. 节点模板的图标
 
 **当前状态**  
-`src/nodeTemplates.ts` 中每个 `NodeTemplate` 的 `icon` 字段使用 **emoji 字符**，例如 `'🔢'`。
+`src/nodeTemplates.ts` 中每个 `NodeTemplate` 的 `icon` 字段使用 **emoji 字符**，例如 `'🔢'`。同时，`src/registry/nodeTemplateRegistry.ts` 中定义的内置模板也使用 emoji。
 
 **替换为图片**  
 1. 将你想要的图标文件（如 SVG、PNG）放入 `public/icons/` 目录（需自行创建该目录）。  
-2. 修改 `icon` 字段为图片的 URL（例如 `'/icons/number-input.svg'`）。  
-3. 更新 `src/components/GenericNode.tsx` 中渲染图标的逻辑，让它既支持 emoji 又支持图片。找到原本直接输出 `{icon}` 的位置，替换为：
+2. 修改模板定义中的 `icon` 字段为图片的 URL（例如 `'/icons/number-input.svg'`）。  
+3. 更新 `src/components/GenericNode.tsx` 中渲染图标的逻辑，让它既支持 emoji 又支持图片。找到原本直接输出 `{icon}` 的位置（标题行），替换为：
 
 ```tsx
-{icon.startsWith('http') || icon.startsWith('/') ? (
-  <img src={icon} alt="" style={{ width: 18, height: 18, marginRight: 4 }} />
-) : (
-  <span>{icon}</span>
-)}
+<strong className="node-title">
+    {isLocked && <span style={{ marginRight: 4 }}>🔒</span>}
+    {icon.startsWith('http') || icon.startsWith('/') ? (
+        <img src={icon} alt="" style={{ width: 18, height: 18, marginRight: 4 }} />
+    ) : (
+        <span>{icon}</span>
+    )} {titleText}
+</strong>
 ```
 
-**完整体现代码**（在 `GenericNode.tsx` 的标题行中）：
+**完整体现代码**（在 `GenericNode.tsx` 的 `return` 中）：
 
 ```tsx
 <strong className="node-title">
@@ -64,7 +67,7 @@
 - `src/assets/vite.svg`
 - `src/assets/hero.png`
 
-如果你的`public/`目录下也有类似的遗留文件，按需清理即可。
+如果你的 `public/` 目录下也有类似的遗留文件，按需清理即可。
 
 ---
 
@@ -97,16 +100,46 @@
 
 ---
 
-## 5. 快速总结
+## 5. 侧边栏按钮图标
+
+左侧边栏（`Sidebar.tsx`）和节点库（`NodeLibrary.tsx`）中的按钮目前使用文字 + emoji。如果你想为这些按钮添加自定义图标（例如用 Font Awesome 或本地 SVG），可以修改相应 JSX。
+
+**示例**（在 `Sidebar.tsx` 的按钮中）：
+
+```tsx
+<button className="sidebar-action-btn" onClick={onAutoLayout}>
+    <img src="/icons/layout.svg" alt="布局" style={{ width: 16, marginRight: 8 }} />
+    自动布局
+</button>
+```
+
+但需要注意引入图标库或确保图片路径正确。
+
+---
+
+## 6. 快速总结
 
 | 要修改的内容 | 文件位置 | 操作 |
 |-------------|----------|------|
 | 网页图标 | `index.html` + 根目录文件 | 替换 `favicon.svg` 并修改 `<link>` |
-| 节点图标 | `src/nodeTemplates.ts` + `GenericNode.tsx` | 修改 `icon` 字段并更新渲染逻辑 |
+| 节点图标 | `src/registry/nodeTemplateRegistry.ts` (内置模板) 或 `custom-mods` 中的模板定义 + `GenericNode.tsx` | 修改 `icon` 字段并更新渲染逻辑 |
 | 删除默认图片 | `src/assets/react.svg`, `vite.svg`, `hero.png` | 直接删除 |
 | 画布空状态图片 | `FlowCanvas.tsx` | 修改 JSX 空状态块 |
+| 侧边栏按钮图标 | `Sidebar.tsx`, `NodeLibrary.tsx` | 添加 `<img>` 或使用图标库 |
 
 以上所有操作都不会影响编辑器的核心功能，可以放心修改。
+
+---
+
+## 7. 高级：使用图标库（如 Font Awesome）
+
+如果你想使用 Font Awesome 等图标库，可以安装依赖并在组件中直接使用图标组件，而不是图片或 emoji。
+
+1. 安装 `@fortawesome/react-fontawesome` 和对应图标包。
+2. 在 `GenericNode.tsx` 中根据 `icon` 字段的内容（例如 `'fa-solid fa-calculator'`）渲染 `<FontAwesomeIcon>`。
+3. 修改模板定义，将 `icon` 字段改为 Font Awesome 的类名或标识。
+
+由于这需要额外的依赖和配置，本文档不再展开，但原理与使用图片类似。
 
 ---
 

@@ -1,135 +1,294 @@
 # 自定义 Mod 开发指南
 
-本编辑器采用事件总线 + Mod 插件架构。你可以编写自己的 Mod 来添加功能，完全不需要修改核心源代码，实现功能扩展与核心代码的解耦，提升开发效率与可维护性。
-
----
-
+本编辑器采用事件总线 + Mod 插件架构。你可以编写自己的 Mod 来添加、覆盖或继承内置功能，完全不需要修改核心源代码。所有自定义 Mod 统一放在 `custom-mods/` 目录中，通过 `custom-mods/index.ts` 注册。
 ## 快速上手
 
 ### 1. 创建 Mod 文件
 
-在 `custom-mods/` 目录下新建一个 `.ts` 文件，例如 `my-logger-mod.ts`，内容如下：
+在 `custom-mods/` 目录下新建一个 `.ts` 文件，例如 `my-logger-mod.ts`：
 
 ```ts
 import type { EditorMod } from '../src/bus/types';
 
 export const myLoggerMod: EditorMod = {
-    id: 'my-logger',  // 必须唯一，用于标识当前Mod，避免与其他Mod冲突
+    id: 'my-logger',  // 全局唯一标识
     init(bus) {
-        // 订阅所有事件，监听编辑器的各类操作
+        // 订阅所有事件，输出到控制台
         const unsub = bus.subscribe(({ event, state }) => {
             console.log(`[my-logger] 事件: ${event.type}`, event);
         });
-
-        // 返回取消订阅函数，组件卸载时自动调用，避免内存泄漏
-        return () => {
-            unsub();
-        };
+        // 返回清理函数，组件卸载时自动调用
+        return () => unsub();
     },
 };
 ```
 
 ### 2. 注册 Mod
 
-打开 `custom-mods/index.ts`，导入并添加你的 Mod，注册完成后即可被编辑器识别：
+编辑 `custom-mods/index.ts`，导入并添加你的 Mod：
 
 ```ts
 import { myLoggerMod } from './my-logger-mod';
 import type { EditorMod } from '../src/bus/types';
 
 export const customMods: EditorMod[] = [
-    myLoggerMod,  // 加入自定义Mod，可同时添加多个
+    myLoggerMod,   // 加入自定义Mod，可同时添加多个
 ];
 ```
 
-保存文件，刷新浏览器即可生效，无需重启开发服务器。
+保存文件，刷新浏览器即可生效。
 
-## Mod 接口说明
+---
 
-每个 Mod 必须符合 `EditorMod` 接口规范，确保能被编辑器正确加载和执行，接口定义如下：
+## Mod 核心接口
+
+每个 Mod 必须实现 `EditorMod` 接口：
 
 ```ts
 export interface EditorMod {
-    id: string;                                     // 唯一标识，全局不可重复
-    init: (bus: EditorBus) => (() => void) | void;  // 初始化方法，可返回清理函数（用于组件卸载时释放资源）
+    id: string;                                     // 全局唯一标识
+    init: (bus: EditorBus) => (() => void) | void;  // 初始化，可返回清理函数
 }
 ```
 
-## EditorBus 提供的能力
+- **`id`**：建议使用有意义的英文标识，如 `'my-auto-save'`。如果要覆盖内置 Mod，必须使用与内置 Mod 相同的 `id`（例如 `'history'`、`'workflow-io'`）。
+- **`init`**：接收 `EditorBus` 实例，可返回一个清理函数（用于移除事件监听、定时器等）。
 
-通过 `init(bus)` 中的 `bus` 对象（事件总线核心实例），你可以实现对编辑器的各类操作，核心能力如下：
+---
 
-- `bus.getState()` → 获取当前编辑器状态，包含 `{ nodes, edges, selection, mode }` 四个核心属性
-- `bus.dispatch(event)` → 派发事件，触发编辑器状态变更（如添加节点、切换模式等）
-- `bus.subscribe(listener)` → 订阅所有编辑器事件，返回取消订阅的函数，用于停止监听事件
+## EditorBus 提供的 API
+
+通过 `init(bus)` 中的 `bus` 对象，你可以：
+
+- **`bus.getState()`** → 获取当前编辑器状态 `{ nodes, edges, selection, mode }`
+- **`bus.dispatch(event)`** → 派发事件，触发状态变更或通知其他 Mod
+- **`bus.subscribe(listener)`** → 订阅所有事件，返回取消订阅函数
+
+---
 
 ## 常用事件类型
 
-编辑器会在各类操作时触发对应事件，Mod 可通过订阅事件实现功能扩展，常用事件如下表所示：
+以下是最常用的事件（完整列表见 `src/bus/types.ts`）：
 
-| 事件 | 何时触发 |
-|------|----------|
-| `NODE_ADDED` | 添加节点 |
-| `NODES_ADDED` | 批量添加节点 |
-| `NODE_DELETED` | 删除节点 |
-| `NODE_DATA_CHANGED` | 节点数据变更 |
-| `NODE_POSITIONS_CHANGED` | 节点位置变化 |
-| `EDGE_ADDED` | 添加边 |
-| `EDGE_DELETED` | 删除边 |
-| `EDGE_RECONNECTED` | 边重连 |
-| `SELECTION_CHANGED` | 选中状态变化 |
-| `MODE_CHANGED` | 编辑器模式变化 |
-| `WORKFLOW_LOADED` | 工作流导入或重置 |
-| `HISTORY_UNDO` / `HISTORY_REDO` | 撤销/重做 |
-| `BATCH_CONNECT_START` / `EXECUTE` / `CANCEL` | 批量连线 |
-| `ALIGN_LEFT` / `ALIGN_RIGHT` / … | 对齐操作 |
-| `AUTO_LAYOUT` | 自动布局 |
+| 事件 | 说明 | 典型用途 |
+|------|------|----------|
+| `NODE_ADDED` | 添加节点 | 统计节点数量、自动保存 |
+| `NODE_DELETED` | 删除节点 | 清理资源、记录日志 |
+| `NODE_DATA_CHANGED` | 节点数据变更 | 同步外部系统、自动保存 |
+| `EDGE_ADDED` / `EDGE_DELETED` | 边的增删 | 更新依赖图 |
+| `SELECTION_CHANGED` | 选中变化 | 更新属性面板 |
+| `WORKFLOW_LOADED` | 加载/重置工作流 | 重置历史、同步外部存储 |
+| `HISTORY_UNDO` / `HISTORY_REDO` | 撤销/重做 | 自定义撤销行为 |
+| `AUTO_LAYOUT` | 自动布局 | 触发自定义布局算法 |
+| `ALIGN_LEFT` / `ALIGN_RIGHT` … | 对齐操作 | 自定义对齐规则 |
+| `BATCH_CONNECT_START` / `EXECUTE` / `CANCEL` | 批量连线 | 扩展批量连线逻辑 |
+| `RECONNECT_START` / `END` | 重连开始/结束 | 抑制连接菜单 |
+| `CONNECTION_MENU_OPEN` / `CLOSE` | 连接菜单开关 | 自定义菜单内容 |
+| `FLOATING_SEARCH_OPEN` / `CLOSE` | 浮动搜索开关 | 自定义搜索行为 |
 
-完整事件列表请参考 `src/bus/types.ts` 文件。
+---
 
 ## 示例：自动保存 Mod
 
-编辑器已提供示例 Mod 文件 `custom-mods/example-auto-save-mod.ts`，无需编写额外代码，将其注册到 `index.ts` 即可使用：
+编辑器已提供示例 `custom-mods/example-auto-save-mod.ts`，将其注册即可工作：
 
 ```ts
 import { exampleAutoSaveMod } from './example-auto-save-mod';
 
 export const customMods: EditorMod[] = [
-    exampleAutoSaveMod,  // 注册自动保存Mod
+    exampleAutoSaveMod,
 ];
 ```
 
-该 Mod 会在每次工作流变更时（如节点添加、删除、数据修改等），自动将工作流数据保存到 `localStorage` 的 `auto-saved-workflow` 键中，防止数据丢失。
-
-## 注意事项
-
-- 请不要修改 `src/bus/`、`src/mods/`、`src/components/` 等核心目录，除非你完全明白修改带来的潜在影响，避免破坏编辑器原有功能。
-- Mod 的 `id` 应保持全局唯一，避免与其他 Mod 冲突，建议采用“功能描述+标识”的命名方式（如 `my-logger`、`auto-save`）。
-- 所有自定义 Mod 统一放在 `custom-mods/` 目录下，通过 `custom-mods/index.ts` 集中管理，便于后续维护和扩展。
-- 如果遇到开发问题，请查阅 `src/mods/` 下的内置 Mod 源码作为参考，内置 Mod 遵循相同的开发规范，可快速借鉴实现思路。
-
-## 更多可能
-
-借助事件总线的灵活性，你可以发挥创意，实现各类个性化功能，例如：
-
-- 撤销/重做按钮（通过派发 `HISTORY_UNDO` / `HISTORY_REDO` 事件）
-- 自定义导出格式（监听 `WORKFLOW_LOADED` 事件后，转换工作流数据为指定格式）
-- 快捷键增强（如绑定 `Ctrl+S` 触发保存操作，`Ctrl+Z` 触发撤销操作）
-- 统计分析（订阅节点相关事件，记录节点数量变化、操作频率等数据）
-
-只要能通过事件总线监听或派发事件，均可实现对应的功能扩展，无需修改核心代码。
+该 Mod 会在节点/边增删改、数据变化时防抖保存到 `localStorage`，并在页面关闭前强制保存。
 
 ---
 
-## 最终验证
+## 覆盖内置 Mod
 
-Mod 开发完成后，可通过以下步骤验证功能是否正常，确保可插拔性和稳定性：
+如果你想**完全替换**某个内置功能（比如用自定义历史记录替换默认历史记录），只需创建一个 Mod，`id` 与内置 Mod 相同即可。内置 Mod 的 `id` 列表如下：
 
-1. 确保已创建 `custom-mods/` 文件夹，内含 `index.ts` 和 `example-auto-save-mod.ts`（示例 Mod）。
-2. 确认 `src/mods/index.ts` 和 `src/App.tsx` 已按上述修改更新，确保 Mod 能被编辑器正确加载。
-3. 运行 `npm run typecheck` 命令，检查代码类型是否正确，应无任何错误提示。
-4. 启动开发服务器，打开浏览器控制台，应看到示例 Mod 的自动保存日志，说明 Mod 已成功生效。
-5. 在 `custom-mods/index.ts` 中注释掉示例 Mod，刷新浏览器后，自动保存功能消失，说明 Mod 具备良好的可插拔性。
+| 内置 Mod | id |
+|----------|-----|
+| 历史记录 | `history` |
+| 批量连线 | `batch-connect` |
+| 对齐与自动布局 | `alignment` |
+| 剪贴板 | `clipboard` |
+| 重连管理 | `reconnect` |
+| 项目配置 | `project-config` |
+| 节点生命周期 | `node-lifecycle` |
+| 连接菜单 | `connection-menu` |
+| 画布右键菜单 | `canvas-context-menu` |
+| 浮动搜索 | `floating-search` |
+| 工作流导入导出 | `workflow-io` |
 
-这套方案零侵入原有代码（只有两个小改动且完全向后兼容），其他人可以直接克隆项目，然后在 `custom-mods/` 中开发自己的插件，无需关注核心代码的实现细节，大幅提升协作开发效率。
+例如，覆盖历史记录：
+
+```ts
+export const myHistoryMod: EditorMod = {
+    id: 'history',   // 相同的 id
+    init(bus) {
+        console.log('自定义历史记录已启动');
+        // 你的实现...
+        return () => {};
+    },
+};
 ```
+
+注册后，你的 Mod 会完全取代内置版本，且不会被初始化失败影响（有防御降级机制，但建议确保健壮性）。
+
+---
+
+## 继承内置 Mod（增强）
+
+某些内置 Mod 导出了可复用的工具函数，允许你在不改动原逻辑的基础上增加功能。例如：
+
+- `mod-node-lifecycle` 导出 `createOnNodesChange`, `createOnEdgesChange`, `createOnConnect`, `createOnReconnect`。
+- `mod-connection-menu` 导出 `createConnectionEndHandler`, `showConnectionMenu`, `hideConnectionMenu`。
+- `mod-workflow-io` 导出 `setWorkflowIOHandlers` 用于替换导入/导出格式。
+
+**继承示例**：在不修改内置连接菜单逻辑的前提下，增加日志记录。
+
+```ts
+import { createConnectionEndHandler, showConnectionMenu } from '../src/mods/mod-connection-menu';
+import type { EditorMod } from '../src/bus/types';
+
+export const loggingConnectionMenuMod: EditorMod = {
+    id: 'connection-menu',   // 覆盖内置 id
+    init(bus) {
+        // 包装原始处理器
+        const originalHandler = createConnectionEndHandler(bus);
+        const wrappedHandler = (event: any, connectionState: any) => {
+            console.log('[enhanced] 拖线结束，即将判断是否弹出菜单');
+            originalHandler(event, connectionState);
+        };
+        // 替换 FlowCanvas 中的 onConnectEnd 需要修改 App.tsx，但更简单的方式是直接监听事件
+        // 这里演示订阅 CONNECTION_MENU_OPEN 事件来增加日志
+        const unsub = bus.subscribe(({ event }) => {
+            if (event.type === 'CONNECTION_MENU_OPEN') {
+                console.log('[enhanced] 连接菜单已打开', event.payload);
+            }
+        });
+        return () => unsub();
+    },
+};
+```
+
+注意：继承往往需要配合事件监听，而不是直接修改函数调用。
+
+---
+
+## 防御降级机制
+
+当你的自定义 Mod 在 `init` 中抛出错误时，系统会自动尝试回退到同名的内置 Mod（如果存在），并输出彩色错误日志和降级警告。因此，即使你的 Mod 有 bug，也不会导致整个编辑器无法使用。
+
+你可以故意制造错误来测试：
+
+```ts
+export const brokenMod: EditorMod = {
+    id: 'history',
+    init() {
+        throw new Error('测试降级');
+    },
+};
+```
+
+控制台会显示红色错误和黄色降级提示，而历史记录功能依然正常（内置版本接管）。
+
+---
+
+## 节点模板注册中心
+
+如果你需要动态添加或替换节点模板，可以使用 `src/registry/nodeTemplateRegistry.ts` 提供的函数：
+
+- `registerNodeTemplates(templates)`：添加自定义模板（与内置模板不重复时有效）。
+- `setBuiltInTemplates(templates)`：完全替换内置模板。
+- `resetBuiltInTemplates()`：恢复默认内置模板。
+- `getAllTemplates()`：获取当前所有模板（自定义覆盖内置）。
+
+示例 Mod：
+
+```ts
+import { registerNodeTemplates } from '../src/registry/nodeTemplateRegistry';
+import type { NodeTemplate } from '../src/nodeTemplates';
+
+const myNode: NodeTemplate = { /* ... */ };
+
+export const myNodeMod: EditorMod = {
+    id: 'my-nodes',
+    init() {
+        registerNodeTemplates([myNode]);
+        return () => {}; // 无需清理，不影响下次加载
+    },
+};
+```
+
+---
+
+## 工具函数辅助
+
+从 `src/utils` 导入常用工具：
+
+- `generateNodeId()`：生成唯一节点 ID。
+- `createNode(type, position)`：根据模板类型创建完整节点对象。
+- `syncIdCounter(nodes)`：同步 ID 计数器，避免冲突。
+- `exportWorkflow(nodes, edges)`、`importWorkflow()`：JSON 导入导出（通常使用 `mod-workflow-io` 更灵活）。
+
+---
+
+## 常见问题
+
+### Q：如何调试 Mod？
+- 打开浏览器控制台，设置 `DEBUG = true`（在 `config/debug.ts` 中）。
+- 在 `init` 中使用 `console.log` 输出信息。
+- 订阅事件并打印。
+
+### Q：我的 Mod 没有生效？
+- 检查 `custom-mods/index.ts` 是否正确导入并添加到数组中。
+- 检查 Mod 的 `id` 是否与内置 Mod 冲突但无意覆盖（如果不是故意的）。
+- 刷新页面，观察控制台是否有 `[initMods]` 相关日志。
+
+### Q：如何让 Mod 只在特定条件下运行？
+- 在 `init` 中根据 `bus.getState().mode` 或其他条件决定是否订阅事件即可。
+
+### Q：可以同时注册多个 Mod 吗？
+- 可以，它们按数组顺序初始化。顺序一般不影响功能，除非有依赖关系（依赖其他 Mod 的副作用）。
+
+---
+
+## 完整示例：快捷键保存 Mod
+
+下面是一个独立 Mod，按下 `Ctrl+S` 时触发保存工作流（利用内置 `mod-workflow-io` 的导出函数）：
+
+```ts
+import type { EditorMod, EditorBus } from '../src/bus/types';
+import { exportWorkflowData } from '../src/mods/mod-workflow-io';
+
+export const saveShortcutMod: EditorMod = {
+    id: 'save-shortcut',
+    init(bus: EditorBus) {
+        const handler = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                const { nodes, edges } = bus.getState();
+                exportWorkflowData(nodes, edges);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    },
+};
+```
+
+注册后，用户即可用 `Ctrl+S` 导出工作流 JSON 文件（或 YAML，如果已覆盖 `workflow-io`）。
+
+---
+
+## 总结
+
+- 所有自定义代码放在 `custom-mods/`，无需修改核心。
+- Mod 可以添加新功能、覆盖内置功能、或继承并增强。
+- 利用事件总线进行通信，利用注册中心扩展节点模板。
+- 防御降级机制保证即使 Mod 出错，编辑器也能正常工作。
+
+更多 API 细节请参考 `AI_MOD_API_REFERENCE.md`，节点模板定义请参考 `NODE_TEMPLATE_API.md`。

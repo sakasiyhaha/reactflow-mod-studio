@@ -1,125 +1,134 @@
 // src/mods/mod-history.ts
-// 历史记录 Mod - 监听所有变更事件，维护 past/future 快照栈
-// 替代 useHistory Hook 的大部分逻辑
-// 当收到 HISTORY_UNDO / HISTORY_REDO 事件时，从栈中取出快照并恢复
+// 历史记录 Mod - 使用状态对比法正确记录操作前的状态
+// 通过维护 lastState，在每次状态变化时将旧状态存入历史栈，撤销时恢复到旧状态
 
 import type { EditorMod, EditorBus, EditorState } from '../bus/types';
 import { MAX_HISTORY } from '../../constants/editor';
 import { DEBUG } from '../../config/debug';
-import { syncIdCounter } from '../utils'; // 新增导入
+import { syncIdCounter } from '../utils';
 
-// ==================== 内部状态（模块私有） ====================
-let past: EditorState[] = [];       // 过去快照栈
-let future: EditorState[] = [];     // 未来快照栈（重做时使用）
-let isRestoring = false;            // 标志：是否正在执行还原操作（防止还原时误记录快照）
+// 历史栈（存储操作前的状态快照）
+let past: EditorState[] = [];
+let future: EditorState[] = [];
+let lastState: EditorState | null = null;   // 上一次的状态（用于对比）
+let isUndoRedo = false;                     // 正在执行撤销/重做，禁止记录新历史
 
-// ==================== 辅助函数 ====================
-/** 深拷贝当前状态，生成一个不可变快照 */
+// 深拷贝状态
 function takeSnapshot(state: EditorState): EditorState {
-  return {
-    nodes: structuredClone(state.nodes),
-    edges: structuredClone(state.edges),
-    selection: [...state.selection],
-    mode: state.mode,
-  };
-}
-
-/** 将当前状态存入 past 栈，并清空 future 栈（新操作导致重做不可用） */
-function pushSnapshot(state: EditorState) {
-  if (isRestoring) return;          // 还原过程中不记录
-
-  const snapshot = takeSnapshot(state);
-  past.push(snapshot);
-  if (past.length > MAX_HISTORY) past.shift();   // 限制最大历史步数
-  future = [];                     // 清空未来栈
-
-  if (DEBUG) console.log(`[mod-history] 快照存入 past:${past.length}, future:0`);
-}
-
-// ==================== Mod 定义 ====================
-export const modHistory: EditorMod = {
-  id: 'history',
-  init(bus: EditorBus) {
-    // 订阅所有事件
-    const unsub = bus.subscribe(({ event, state }) => {
-      if (isRestoring) return; // 还原过程中跳过，避免循环记录
-
-      switch (event.type) {
-        // ----- 需要记录快照的事件（工作流拓扑发生变化） -----
-        case 'NODE_ADDED':
-        case 'NODES_ADDED':
-        case 'NODE_DELETED':
-        case 'NODE_DATA_CHANGED':
-        case 'NODE_POSITIONS_CHANGED':
-        case 'EDGE_ADDED':
-        case 'EDGE_DELETED':
-        case 'EDGE_RECONNECTED':
-          pushSnapshot(state);
-          break;
-
-        // ----- 工作流加载（导入/重置）：清空历史，记录初始快照，并同步 ID 计数器 -----
-        case 'WORKFLOW_LOADED':
-          past = [];
-          future = [];
-          pushSnapshot(state);
-          // 关键修复：根据加载的节点同步 ID 生成器，防止新节点 ID 冲突
-          syncIdCounter(event.nodes);
-          break;
-
-        // ----- 撤销命令 -----
-        case 'HISTORY_UNDO': {
-          if (past.length === 0) {
-            if (DEBUG) console.log('[mod-history] 无法撤销：past 为空');
-            return;
-          }
-          isRestoring = true;
-
-          future.push(takeSnapshot(state));     // 当前状态存入未来栈
-          const prev = past.pop()!;             // 取出上一个快照
-
-          if (DEBUG) console.log(`[mod-history] 撤销 → past:${past.length}, future:${future.length}`);
-          bus.dispatch({
-            type: 'WORKFLOW_LOADED',
-            nodes: prev.nodes,
-            edges: prev.edges,
-          });
-
-          // 延迟重置标志，确保 WORKFLOW_LOADED 事件处理完再解除保护
-          Promise.resolve().then(() => { isRestoring = false; });
-          break;
-        }
-
-        // ----- 重做命令 -----
-        case 'HISTORY_REDO': {
-          if (future.length === 0) {
-            if (DEBUG) console.log('[mod-history] 无法重做：future 为空');
-            return;
-          }
-          isRestoring = true;
-
-          past.push(takeSnapshot(state));       // 当前状态存入 past
-          const next = future.pop()!;           // 取出最近一个未来快照
-
-          if (DEBUG) console.log(`[mod-history] 重做 → past:${past.length}, future:${future.length}`);
-          bus.dispatch({
-            type: 'WORKFLOW_LOADED',
-            nodes: next.nodes,
-            edges: next.edges,
-          });
-
-          Promise.resolve().then(() => { isRestoring = false; });
-          break;
-        }
-      }
-    });
-
-    // 返回清理函数：移除订阅，重置所有内部状态
-    return () => {
-      unsub();
-      past = [];
-      future = [];
-      isRestoring = false;
-      if (DEBUG) console.log('[mod-history] 已卸载，历史清空');
+    return {
+        nodes: structuredClone(state.nodes),
+        edges: structuredClone(state.edges),
+        selection: [...state.selection],
+        mode: state.mode,
     };
-  },
+}
+
+// 记录当前状态到 past（作为历史点）
+function recordCurrentStateAsHistory(state: EditorState) {
+    if (isUndoRedo) return;
+    const snapshot = takeSnapshot(state);
+    past.push(snapshot);
+    if (past.length > MAX_HISTORY) past.shift();
+    future = [];   // 新操作清空重做栈
+    if (DEBUG) console.log(`[history] 📸 记录历史点 | past:${past.length} future:0 | 节点数:${state.nodes.length}`);
+}
+
+// 判断是否应忽略快捷键的输入框
+function isEditableTarget(target: EventTarget | null): boolean {
+    if (!target || !(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
+}
+
+export const modHistory: EditorMod = {
+    id: 'history',
+    init(bus: EditorBus) {
+        // 初始化时记录一次初始状态
+        const initState = bus.getState();
+        lastState = takeSnapshot(initState);
+        recordCurrentStateAsHistory(initState); // 将初始状态作为第一个历史点
+
+        // 订阅所有事件，用于状态变化检测
+        const unsub = bus.subscribe(({ event, state }) => {
+            if (isUndoRedo) return;
+
+            // 需要忽略的事件（不触发历史记录）
+            const IGNORED_EVENTS = new Set([
+                'HISTORY_UNDO', 'HISTORY_REDO', 'SELECTION_CHANGED',
+                'MODE_CHANGED', 'APPLY_NODE_CHANGES', 'PROJECT_CONFIG_TOGGLE_PANEL'
+            ]);
+            if (IGNORED_EVENTS.has(event.type)) return;
+
+            // 状态对比：如果当前状态与上一次状态不同，说明发生了变更
+            if (lastState) {
+                const hasChanged = JSON.stringify(lastState.nodes) !== JSON.stringify(state.nodes) ||
+                                   JSON.stringify(lastState.edges) !== JSON.stringify(state.edges);
+                if (hasChanged) {
+                    // 将上一次的状态（操作前的状态）存入历史栈
+                    recordCurrentStateAsHistory(lastState);
+                    if (DEBUG) console.log(`[history] 🔄 检测到状态变化，已记录历史点`);
+                }
+            }
+            // 更新 lastState 为当前状态
+            lastState = takeSnapshot(state);
+        });
+
+        // 键盘快捷键处理
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (isEditableTarget(e.target)) return;
+            const mod = e.ctrlKey || e.metaKey;
+            if (!mod) return;
+            const key = e.key.toLowerCase();
+
+            // 撤销 Ctrl+Z
+            if (key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                if (past.length === 0) {
+                    if (DEBUG) console.log('[history] ⚠️ 无法撤销：past 为空');
+                    return;
+                }
+                isUndoRedo = true;
+                // 保存当前状态到 future
+                const currentState = bus.getState();
+                future.push(takeSnapshot(currentState));
+                // 弹出上一个历史状态
+                const prevState = past.pop()!;
+                if (DEBUG) console.log(`[history] ↩️ 撤销 | past:${past.length} future:${future.length} 恢复到 ${prevState.nodes.length} 个节点`);
+                // 恢复状态
+                bus.dispatch({ type: 'WORKFLOW_LOADED', nodes: prevState.nodes, edges: prevState.edges });
+                // 更新 lastState 为恢复后的状态，并重置标志
+                lastState = takeSnapshot(prevState);
+                setTimeout(() => { isUndoRedo = false; }, 0);
+            }
+            // 重做 Ctrl+Y 或 Ctrl+Shift+Z
+            else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+                e.preventDefault();
+                if (future.length === 0) {
+                    if (DEBUG) console.log('[history] ⚠️ 无法重做：future 为空');
+                    return;
+                }
+                isUndoRedo = true;
+                const currentState = bus.getState();
+                past.push(takeSnapshot(currentState));
+                const nextState = future.pop()!;
+                if (DEBUG) console.log(`[history] ↩️↩️ 重做 | past:${past.length} future:${future.length} 恢复到 ${nextState.nodes.length} 个节点`);
+                bus.dispatch({ type: 'WORKFLOW_LOADED', nodes: nextState.nodes, edges: nextState.edges });
+                lastState = takeSnapshot(nextState);
+                setTimeout(() => { isUndoRedo = false; }, 0);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+
+        // 清理函数
+        return () => {
+            unsub();
+            window.removeEventListener('keydown', handleKeyDown);
+            past = [];
+            future = [];
+            lastState = null;
+            isUndoRedo = false;
+            if (DEBUG) console.log('[history] 已卸载');
+        };
+    },
 };
