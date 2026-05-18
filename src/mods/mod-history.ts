@@ -1,9 +1,9 @@
 // src/mods/mod-history.ts
 // 历史记录 Mod - 使用状态对比法正确记录操作前的状态
-// 通过维护 lastState，在每次状态变化时将旧状态存入历史栈，撤销时恢复到旧状态
+// 支持动态配置最大历史步数（通过 constants/editor 中的 getMaxHistory 读取 localStorage）
 
 import type { EditorMod, EditorBus, EditorState } from '../bus/types';
-import { MAX_HISTORY } from '../../constants/editor';
+import { getMaxHistory } from '../../constants/editor';
 import { DEBUG } from '../../config/debug';
 import { syncIdCounter } from '../utils';
 
@@ -28,7 +28,9 @@ function recordCurrentStateAsHistory(state: EditorState) {
     if (isUndoRedo) return;
     const snapshot = takeSnapshot(state);
     past.push(snapshot);
-    if (past.length > MAX_HISTORY) past.shift();
+    // 动态获取最大历史深度限制
+    const maxHistory = getMaxHistory();
+    if (past.length > maxHistory) past.shift();
     future = [];   // 新操作清空重做栈
     if (DEBUG) console.log(`[history] 📸 记录历史点 | past:${past.length} future:0 | 节点数:${state.nodes.length}`);
 }

@@ -127,6 +127,35 @@ interface EditorState {
 | `FLOATING_SEARCH_OPEN` | 打开浮动搜索框 | `{ x: number; y: number }` |
 | `FLOATING_SEARCH_CLOSE` | 关闭浮动搜索框 | 无 |
 
+### 动态视图控制（新增）
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `SET_VIEWPORT_LIMITS` | 动态修改画布缩放范围和平移边界 | `{ minZoom?: number; maxZoom?: number; translateExtent?: [[number,number],[number,number]] }` |
+| `SET_PAN_ON_DRAG` | 修改拖拽平移的鼠标按键 | `number[]`（如 `[1]` 左键，`[1,2]` 左键+中键） |
+| `SET_BACKGROUND_STYLE` | 动态修改画布背景样式 | `{ variant?: 'dots' \| 'lines' \| 'none'; gap?: number; size?: number; color?: string }` |
+
+### 画布视图（新增）
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `VIEWPORT_CHANGED` | 画布缩放/平移时触发 | `{ x: number; y: number; zoom: number }` |
+
+### 对齐辅助线（新增）
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `RENDER_GUIDE_LINES` | 绘制辅助线 | `{ lines: Array<{ x1: number; y1: number; x2: number; y2: number; color?: string }> }` |
+| `CLEAR_GUIDE_LINES` | 清除所有辅助线 | 无 |
+
+### 主题颜色（新增）
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `SET_THEME_COLOR` | 修改单个 CSS 变量 | `{ variable: string; value: string }` |
+| `SET_THEME_COLORS` | 批量修改多个 CSS 变量 | `Record<string, string>` |
+
+### 错误处理（新增）
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `ERROR_OCCURRED` | 发生错误（显示 Toast） | `{ message: string; type?: 'info' \| 'warning' \| 'error'; details?: any }` |
+
 ### 内部同步（通常不直接使用）
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
@@ -149,6 +178,7 @@ interface EditorState {
 | 画布右键菜单 | `canvas-context-menu` | 节点/画布右键菜单判断逻辑 |
 | 浮动搜索 | `floating-search` | 双击画布空白弹出搜索框 |
 | 工作流导入导出 | `workflow-io` | JSON 导入/导出，支持替换处理器（YAML 等） |
+| 错误处理 | `error-handler` | 捕获错误并派发 `ERROR_OCCURRED` 事件 |
 
 ---
 
@@ -197,7 +227,62 @@ interface PortDefinition {
 
 ---
 
-## 6. 常用工具函数
+## 6. 边类型注册 API
+
+从 `src/registry/edgeTemplateRegistry` 导入：
+
+- **`registerEdgeType(type: string, component: React.ComponentType<EdgeProps>): void`**  
+  注册自定义边组件。之后在添加边时，可通过 `type: 'your-type'` 使用该组件。
+
+- **`getEdgeTypeMap(): Record<string, React.ComponentType<EdgeProps>>`**  
+  获取当前所有边类型映射。
+
+示例：
+```typescript
+import { registerEdgeType } from '../src/registry/edgeTemplateRegistry';
+import type { EdgeProps } from '@xyflow/react';
+
+const DashedEdge = (props: EdgeProps) => (
+  <path className="react-flow__edge-path" strokeDasharray="6,4" {...props} />
+);
+
+registerEdgeType('dashed', DashedEdge);
+```
+
+---
+
+## 7. UI 扩展注册中心
+
+以下注册中心允许 Mod 动态扩展界面，无需修改核心组件。
+
+### 7.1 项目设置面板配置项
+从 `src/registry/projectConfigRegistry` 导入：
+- `registerProjectConfigField(field: ConfigField)`
+- `getRegisteredConfigFields()`
+
+### 7.2 侧边栏按钮
+从 `src/registry/sidebarRegistry` 导入：
+- `registerSidebarButton(button: SidebarButton)`
+- `getSidebarButtons()`
+
+### 7.3 右键菜单项
+从 `src/registry/contextMenuRegistry` 导入：
+- `registerNodeMenuItem(item: MenuItem)`
+- `registerPaneMenuItem(item: MenuItem)`
+
+### 7.4 属性面板扩展槽
+从 `src/registry/propsPanelRegistry` 导入：
+- `registerPropsPanelExtension(extension: PropsPanelExtension)`
+
+### 7.5 浮动搜索过滤器
+从 `src/utils/searchExtensions` 导入：
+- `registerSearchFilter(filter: SearchFilter)`
+
+具体参数类型请参考源代码或 `CUSTOM_MODS.md` 中的示例。
+
+---
+
+## 8. 常用工具函数
 
 从 `src/utils` 导入：
 
@@ -221,7 +306,7 @@ interface PortDefinition {
 
 ---
 
-## 7. 可扩展的工具函数（供继承使用）
+## 9. 可扩展的工具函数（供继承使用）
 
 以下内置 Mod 导出了可复用的函数，你可以在自己的 Mod 中直接调用或包装它们：
 
@@ -269,9 +354,9 @@ export function importWorkflowData(bus: EditorBus): Promise<void>;
 
 ---
 
-## 8. Mod 编写模式示例
+## 10. Mod 编写模式示例
 
-### 8.1 订阅事件并执行副作用
+### 10.1 订阅事件并执行副作用
 ```typescript
 export const myMod: EditorMod = {
     id: 'my-mod',
@@ -286,13 +371,13 @@ export const myMod: EditorMod = {
 };
 ```
 
-### 8.2 主动派发事件
+### 10.2 主动派发事件
 ```typescript
 bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: ['node_1', 'node_2'] });
 bus.dispatch({ type: 'AUTO_LAYOUT' });
 ```
 
-### 8.3 注册自定义节点模板
+### 10.3 注册自定义节点模板
 ```typescript
 import { registerNodeTemplates } from '../src/registry/nodeTemplateRegistry';
 
@@ -305,26 +390,38 @@ export const myTemplateMod: EditorMod = {
 };
 ```
 
-### 8.4 覆盖内置 Mod（以工作流 IO 为例，支持 YAML）
+### 10.4 注册自定义边类型
 ```typescript
-import { setWorkflowIOHandlers } from '../src/mods/mod-workflow-io';
-import yaml from 'js-yaml';
+import { registerEdgeType } from '../src/registry/edgeTemplateRegistry';
 
-export const yamlWorkflowMod: EditorMod = {
-    id: 'workflow-io',   // 相同 id 覆盖
-    init(bus) {
-        setWorkflowIOHandlers(
-            async (nodes, edges) => { /* 导出 YAML */ },
-            async (b) => { /* 导入 YAML */ }
-        );
-        return () => { /* 可选恢复默认 */ };
-    },
+export const myEdgeMod: EditorMod = {
+    id: 'my-edges',
+    init() {
+        registerEdgeType('dashed', (props) => <path className="react-flow__edge-path" strokeDasharray="6,4" {...props} />);
+        return () => {};
+    }
 };
+```
+
+### 10.5 动态调整画布视图
+```typescript
+bus.dispatch({
+    type: 'SET_VIEWPORT_LIMITS',
+    payload: { minZoom: 0.5, maxZoom: 2 }
+});
+```
+
+### 10.6 动态切换主题
+```typescript
+bus.dispatch({
+    type: 'SET_THEME_COLORS',
+    payload: { '--primary': '#ff6b6b', '--bg-canvas': '#1e1e2e' }
+});
 ```
 
 ---
 
-## 9. 防御降级机制
+## 11. 防御降级机制
 
 当自定义 Mod 在 `init` 中抛出异常时，系统会：
 - 输出红色错误日志。
@@ -335,7 +432,7 @@ export const yamlWorkflowMod: EditorMod = {
 
 ---
 
-## 10. 重要注意事项
+## 12. 重要注意事项
 
 - Mod 的 `id` 必须全局唯一，建议使用命名空间（如 `'my-plugin-logger'`）。
 - `init` 函数中返回的清理函数用于移除事件监听、定时器等，避免内存泄漏。

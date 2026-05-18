@@ -1,11 +1,11 @@
 // src/components/Sidebar.tsx
-// 左侧边栏组件 —— 包含节点库、功能按钮（自动布局、小地图、保存/加载、项目设置）
-// 项目设置按钮现在通过总线事件驱动，不再依赖 onToggleConfig / configPanelVisible props
-// 这消除了 Sidebar 对"项目设置"这个具体功能的直接依赖
+// 左侧边栏组件 —— 包含节点库、功能按钮（内置 + 动态注册）
 
 import CollapseButton from './CollapseButton';
 import NodeLibrary from './NodeLibrary';
-import { useEditorBusContext } from '../bus/EditorBusContext'; // 获取总线实例
+import { useEditorBusContext } from '../bus/EditorBusContext';
+import { getSidebarButtons } from '../registry/sidebarRegistry';
+import { useState, useEffect } from 'react';
 
 interface SidebarProps {
     collapsed: boolean;       // 是否折叠
@@ -26,9 +26,18 @@ export default function Sidebar({
     onToggleMinimap,
     showMinimap,
 }: SidebarProps) {
-    // 获取总线实例，用于派发项目设置面板切换事件
-    // Sidebar 不需要知道"谁来处理这个事件"，只需要表达"用户点击了设置按钮"
     const bus = useEditorBusContext();
+    const [, forceUpdate] = useState(0); // 用于刷新动态按钮列表
+
+    // 监听按钮注册变化（简单重新渲染）
+    useEffect(() => {
+        // 由于注册中心是同步的，可以在每次渲染时重新获取按钮列表
+        // 但为了响应动态注册，我们可以在 window 上挂一个事件，简单起见这里每次渲染都重新获取即可
+        const interval = setInterval(() => forceUpdate(n => n + 1), 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const customButtons = getSidebarButtons();
 
     return (
         <div className={`sidebar${collapsed ? ' collapsed' : ''}`}>
@@ -41,6 +50,7 @@ export default function Sidebar({
             {/* 功能按钮区域（仅在展开时显示） */}
             {!collapsed && (
                 <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {/* 内置按钮 */}
                     <button className="sidebar-action-btn" onClick={onAutoLayout}>
                         🔄 自动布局
                     </button>
@@ -60,17 +70,21 @@ export default function Sidebar({
                     <button className="sidebar-action-btn" onClick={onLoadWorkflow}>
                         📂 加载工作流
                     </button>
+
+                    {/* 动态注册的按钮 */}
+                    {customButtons.map(btn => (
+                        <button
+                            key={btn.id}
+                            className="sidebar-action-btn"
+                            onClick={() => btn.onClick(bus)}
+                        >
+                            {btn.icon ? `${btn.icon} ` : ''}{btn.label}
+                        </button>
+                    ))}
                 </div>
             )}
 
-            {/* 
-                项目设置按钮
-                - 展开状态：显示完整按钮
-                - 折叠状态：仅显示图标
-                - 点击时派发 PROJECT_CONFIG_TOGGLE_PANEL 事件
-                - 面板的显示/隐藏由 App.tsx 监听同一事件来处理
-                - Sidebar 不再需要知道"面板当前是否打开"（configPanelVisible）
-            */}
+            {/* 项目设置按钮（永远在最底部） */}
             <div className="sidebar-footer">
                 {!collapsed ? (
                     <button

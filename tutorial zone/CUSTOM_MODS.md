@@ -1,6 +1,9 @@
 # 自定义 Mod 开发指南
 
 本编辑器采用事件总线 + Mod 插件架构。你可以编写自己的 Mod 来添加、覆盖或继承内置功能，完全不需要修改核心源代码。所有自定义 Mod 统一放在 `custom-mods/` 目录中，通过 `custom-mods/index.ts` 注册。
+
+---
+
 ## 快速上手
 
 ### 1. 创建 Mod 文件
@@ -85,6 +88,13 @@ export interface EditorMod {
 | `RECONNECT_START` / `END` | 重连开始/结束 | 抑制连接菜单 |
 | `CONNECTION_MENU_OPEN` / `CLOSE` | 连接菜单开关 | 自定义菜单内容 |
 | `FLOATING_SEARCH_OPEN` / `CLOSE` | 浮动搜索开关 | 自定义搜索行为 |
+| `SET_VIEWPORT_LIMITS` | 动态调整画布缩放/平移范围 | 限制用户视图 |
+| `SET_PAN_ON_DRAG` | 修改拖拽平移的鼠标按键 | 支持中键拖拽等 |
+| `SET_BACKGROUND_STYLE` | 动态切换画布背景样式 | 主题切换 |
+| `VIEWPORT_CHANGED` | 画布缩放/平移时触发 | 保存视口位置 |
+| `RENDER_GUIDE_LINES` / `CLEAR_GUIDE_LINES` | 显示/清除对齐辅助线 | 拖拽节点时显示辅助线 |
+| `SET_THEME_COLOR` / `SET_THEME_COLORS` | 动态修改主题颜色 | 亮色/暗色主题 |
+| `ERROR_OCCURRED` | 发生错误 | 显示 Toast 提示 |
 
 ---
 
@@ -121,6 +131,7 @@ export const customMods: EditorMod[] = [
 | 画布右键菜单 | `canvas-context-menu` |
 | 浮动搜索 | `floating-search` |
 | 工作流导入导出 | `workflow-io` |
+| 错误处理 | `error-handler` |
 
 例如，覆盖历史记录：
 
@@ -178,22 +189,176 @@ export const loggingConnectionMenuMod: EditorMod = {
 
 ---
 
-## 防御降级机制
+## 动态扩展画布行为（新增）
 
-当你的自定义 Mod 在 `init` 中抛出错误时，系统会自动尝试回退到同名的内置 Mod（如果存在），并输出彩色错误日志和降级警告。因此，即使你的 Mod 有 bug，也不会导致整个编辑器无法使用。
+你可以通过派发事件来动态控制画布的视图、背景、辅助线和主题。
 
-你可以故意制造错误来测试：
+### 1. 动态调整视图限制
 
-```ts
-export const brokenMod: EditorMod = {
-    id: 'history',
-    init() {
-        throw new Error('测试降级');
-    },
-};
+```typescript
+bus.dispatch({
+  type: 'SET_VIEWPORT_LIMITS',
+  payload: { minZoom: 0.5, maxZoom: 2, translateExtent: [[-1000, -1000], [1000, 1000]] }
+});
 ```
 
-控制台会显示红色错误和黄色降级提示，而历史记录功能依然正常（内置版本接管）。
+### 2. 切换画布背景
+
+```typescript
+bus.dispatch({
+  type: 'SET_BACKGROUND_STYLE',
+  payload: { variant: 'dots', gap: 30, size: 2, color: '#aaa' }
+});
+```
+
+### 3. 显示对齐辅助线
+
+在拖拽节点时，你可以计算辅助线并派发事件：
+
+```typescript
+// 假设 lines 是计算好的线条数组
+bus.dispatch({ type: 'RENDER_GUIDE_LINES', payload: { lines } });
+// 拖拽结束时清除
+bus.dispatch({ type: 'CLEAR_GUIDE_LINES' });
+```
+
+### 4. 动态切换主题
+
+```typescript
+bus.dispatch({
+  type: 'SET_THEME_COLORS',
+  payload: {
+    '--primary': '#ff6b6b',
+    '--bg-canvas': '#1e1e2e',
+  }
+});
+```
+
+---
+
+## UI 扩展注册中心
+
+以下注册中心允许 Mod 动态扩展界面，无需修改核心组件。
+
+### 1. 项目设置面板配置项
+
+使用 `src/registry/projectConfigRegistry.ts`：
+
+```typescript
+import { registerProjectConfigField } from '../src/registry/projectConfigRegistry';
+
+registerProjectConfigField({
+  key: 'modId',
+  label: '模组 ID',
+  type: 'string',
+  defaultValue: 'examplemod',
+  validate: (val) => /^[a-z][a-z0-9_]*$/.test(val),
+  order: 10,
+});
+```
+
+支持的类型：`'string'`, `'number'`, `'boolean'`, `'color'`, `'select'`。
+
+### 2. 侧边栏按钮
+
+使用 `src/registry/sidebarRegistry.ts`：
+
+```typescript
+import { registerSidebarButton } from '../src/registry/sidebarRegistry';
+
+registerSidebarButton({
+  id: 'export-image',
+  label: '📸 导出图片',
+  onClick: (bus) => {
+    console.log('导出图片', bus.getState());
+  },
+  order: 10,
+});
+```
+
+### 3. 右键菜单项
+
+使用 `src/registry/contextMenuRegistry.ts`：
+
+```typescript
+import { registerNodeMenuItem, registerPaneMenuItem } from '../src/registry/contextMenuRegistry';
+
+// 节点右键菜单
+registerNodeMenuItem({
+  id: 'log-node',
+  label: '📋 输出节点信息',
+  action: (bus, nodeId) => {
+    if (nodeId) console.log(bus.getState().nodes.find(n => n.id === nodeId));
+  },
+  condition: (state, nodeId) => true,
+});
+
+// 画布右键菜单
+registerPaneMenuItem({
+  id: 'clear-canvas',
+  label: '🧹 清空画布',
+  action: (bus) => {
+    bus.dispatch({ type: 'NODE_DELETED', nodeIds: bus.getState().nodes.map(n => n.id) });
+  },
+});
+```
+
+### 4. 属性面板扩展槽
+
+使用 `src/registry/propsPanelRegistry.ts`：
+
+```tsx
+import { registerPropsPanelExtension } from '../src/registry/propsPanelRegistry';
+import React from 'react';
+
+const MyExtension = ({ selectedNode, bus }) => {
+  if (!selectedNode) return null;
+  return <div>当前节点类型: {selectedNode.type}</div>;
+};
+
+registerPropsPanelExtension({
+  id: 'my-extension',
+  slot: 'top',   // 或 'bottom'
+  component: MyExtension,
+  condition: (node) => node !== null,
+});
+```
+
+### 5. 浮动搜索过滤器
+
+使用 `src/utils/searchExtensions.ts`：
+
+```typescript
+import { registerSearchFilter } from '../src/utils/searchExtensions';
+
+registerSearchFilter((templates, query) => {
+  // 将“最近使用”的节点置顶（示例）
+  if (!query.trim()) {
+    const recent = ['numberInput', 'adder'];
+    const recentNodes = recent.map(type => templates.find(t => t.type === type)).filter(Boolean);
+    const others = templates.filter(t => !recent.includes(t.type));
+    return [...recentNodes, ...others];
+  }
+  return templates;
+});
+```
+
+### 6. 边类型注册中心
+
+使用 `src/registry/edgeTemplateRegistry.ts`：
+
+```typescript
+import { registerEdgeType } from '../src/registry/edgeTemplateRegistry';
+import type { EdgeProps } from '@xyflow/react';
+
+const DashedEdge = (props: EdgeProps) => (
+  <path className="react-flow__edge-path" strokeDasharray="6,4" {...props} />
+);
+
+registerEdgeType('dashed', DashedEdge);
+```
+
+之后在添加边时，指定 `type: 'dashed'` 即可使用该边样式。
 
 ---
 
@@ -233,6 +398,25 @@ export const myNodeMod: EditorMod = {
 - `createNode(type, position)`：根据模板类型创建完整节点对象。
 - `syncIdCounter(nodes)`：同步 ID 计数器，避免冲突。
 - `exportWorkflow(nodes, edges)`、`importWorkflow()`：JSON 导入导出（通常使用 `mod-workflow-io` 更灵活）。
+
+---
+
+## 防御降级机制
+
+当你的自定义 Mod 在 `init` 中抛出错误时，系统会自动尝试回退到同名的内置 Mod（如果存在），并输出彩色错误日志和降级警告。因此，即使你的 Mod 有 bug，也不会导致整个编辑器无法使用。
+
+你可以故意制造错误来测试：
+
+```ts
+export const brokenMod: EditorMod = {
+    id: 'history',
+    init() {
+        throw new Error('测试降级');
+    },
+};
+```
+
+控制台会显示红色错误和黄色降级提示，而历史记录功能依然正常（内置版本接管）。
 
 ---
 
@@ -288,7 +472,7 @@ export const saveShortcutMod: EditorMod = {
 
 - 所有自定义代码放在 `custom-mods/`，无需修改核心。
 - Mod 可以添加新功能、覆盖内置功能、或继承并增强。
-- 利用事件总线进行通信，利用注册中心扩展节点模板。
+- 利用事件总线进行通信，利用注册中心扩展 UI 和节点模板。
 - 防御降级机制保证即使 Mod 出错，编辑器也能正常工作。
 
 更多 API 细节请参考 `AI_MOD_API_REFERENCE.md`，节点模板定义请参考 `NODE_TEMPLATE_API.md`。

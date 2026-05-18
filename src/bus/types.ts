@@ -66,9 +66,21 @@ export type EditorEvent =
   | { type: 'DISTRIBUTE_HORIZONTAL' }
   | { type: 'DISTRIBUTE_VERTICAL' }
   | { type: 'AUTO_LAYOUT' }
+    // ---------- 对齐辅助线 ----------
+  | { type: 'RENDER_GUIDE_LINES'; payload: { lines: Array<{ x1: number; y1: number; x2: number; y2: number; color?: string }> } }
+  | { type: 'CLEAR_GUIDE_LINES' }
+   // ---------- 动态视图控制 ----------
+  | { type: 'SET_VIEWPORT_LIMITS'; payload: { minZoom?: number; maxZoom?: number; translateExtent?: [[number, number], [number, number]] } }
+  | { type: 'SET_PAN_ON_DRAG'; payload: number[] }  // 例如 [1] 左键，[1,2] 左键+中键
+  | { type: 'SET_BACKGROUND_STYLE'; payload: { variant?: 'dots' | 'lines' | 'none'; gap?: number; size?: number; color?: string } }
   // ---------- 项目配置 ----------
   | { type: 'PROJECT_CONFIG_TOGGLE_PANEL' }                                               // 切换设置面板显示/隐藏
   | { type: 'PROJECT_CONFIG_CHANGED'; config: Record<string, unknown> }                  // 项目配置已变更
+  // ---------- 画布视图 ----------
+  | { type: 'VIEWPORT_CHANGED'; payload: { x: number; y: number; zoom: number } }
+  // ---------- 主题颜色 ----------
+  | { type: 'SET_THEME_COLOR'; payload: { variable: string; value: string } }
+  | { type: 'SET_THEME_COLORS'; payload: Record<string, string> }
   // ---------- 连接菜单 ----------
   | { type: 'CONNECTION_MENU_OPEN'; payload: {
       x: number;

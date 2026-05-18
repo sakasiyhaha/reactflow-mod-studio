@@ -2,7 +2,7 @@
   "name": "reactflow-mod-studio",
   "license": "MIT",
   "private": false,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
     "scripts": {
         "dev": "vite",

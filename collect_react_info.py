@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-React 项目信息收集脚本（优化版）
+React 项目信息收集脚本（增强版）
 - 自动生成结构化快照报告，供 AI 分析
 - 排除 SVG 等大体积非代码文件的内容，仅记录路径
 - 智能处理含空格的路径（如 'tutorial zone'）
 - 自动包含所有非忽略的顶级目录，无需手工维护目录列表
+- 支持 --verbose 和 --list-files 调试选项
 """
 
 import os
@@ -20,7 +21,7 @@ OUTPUT_FILE = PROJECT_ROOT / "react_project_snapshot.txt"
 
 # 支持读取内容的文本文件扩展名（排除 .svg 以减少报告体积）
 TEXT_EXTENSIONS = {
-    ".js", ".jsx", ".ts", ".tsx",
+    ".js", ".jsx", ".ts", ".tsx", ".d.ts", ".d.tsx",
     ".css", ".scss", ".less",
     ".html", ".json", ".md", ".txt", ".xml",
     ".yaml", ".yml",
@@ -29,8 +30,7 @@ TEXT_EXTENSIONS = {
 # 默认忽略的目录/文件名称（精确匹配）
 SKIP_PATTERNS = {
     "node_modules", ".git", ".vite", "dist", "build",
-    "archive",
-    "__pycache__", ".idea", ".vs",
+    "archive", "__pycache__", ".idea", ".vs", ".DS_Store",
 }
 
 # 即使在上面的忽略列表中，这些文件也强制读取内容
@@ -67,7 +67,8 @@ def should_read_content(file_path: Path) -> bool:
     try:
         size_kb = file_path.stat().st_size / 1024
         if size_kb > MAX_FILE_SIZE_KB:
-            print(f"⚠️  跳过过大文件: {file_path} ({size_kb:.1f} KB)")
+            if verbose:
+                print(f"⚠️  跳过过大文件: {file_path} ({size_kb:.1f} KB)")
             return False
     except OSError:
         return False
@@ -89,7 +90,7 @@ def get_lang(suffix: str) -> str:
     """根据扩展名推断代码语言，供 Markdown 高亮"""
     mapping = {
         '.js': 'javascript', '.jsx': 'javascript',
-        '.ts': 'typescript', '.tsx': 'typescript',
+        '.ts': 'typescript', '.tsx': 'typescript', '.d.ts': 'typescript', '.d.tsx': 'typescript',
         '.css': 'css', '.scss': 'scss', '.less': 'less',
         '.html': 'html',
         '.json': 'json',
@@ -100,7 +101,7 @@ def get_lang(suffix: str) -> str:
     return mapping.get(suffix.lower(), '')
 
 # ==================== 目录树生成 ====================
-def generate_tree(root: Path, prefix="", is_last=False, root_label=None) -> list:
+def generate_tree(root: Path, prefix="", is_last=False, root_label=None, verbose=False) -> list:
     """递归生成文本目录树（兼容含空格目录名）"""
     lines = []
     if not root.is_dir():
@@ -110,10 +111,15 @@ def generate_tree(root: Path, prefix="", is_last=False, root_label=None) -> list
         lines.append(prefix + root_label + "/")
         prefix = prefix + "    " if is_last else prefix + "│   "
 
-    children = sorted(
-        [p for p in root.iterdir() if not should_skip(p.name)],
-        key=lambda x: (not x.is_dir(), x.name.lower())
-    )
+    try:
+        children = sorted(
+            [p for p in root.iterdir() if not should_skip(p.name)],
+            key=lambda x: (not x.is_dir(), x.name.lower())
+        )
+    except PermissionError:
+        lines.append(prefix + "└── [权限不足，无法读取]")
+        return lines
+
     for i, child in enumerate(children):
         is_last_child = (i == len(children) - 1)
         connector = "└── " if is_last_child else "├── "
@@ -149,16 +155,15 @@ def collect_configs() -> str:
     seen = set()
     unique_files = []
     for f in config_files:
-        if f not in seen:
+        if f.exists() and f not in seen:
             seen.add(f)
             unique_files.append(f)
 
     content = []
     for cfg in unique_files:
-        if cfg.exists():
-            rel = cfg.relative_to(PROJECT_ROOT)
-            lang = get_lang(cfg.suffix)
-            content.append(f"\n### {rel}\n```{lang}\n{safe_read(cfg)}\n```")
+        rel = cfg.relative_to(PROJECT_ROOT)
+        lang = get_lang(cfg.suffix)
+        content.append(f"\n### {rel}\n```{lang}\n{safe_read(cfg)}\n```")
     return "".join(content)
 
 def collect_entry_html() -> str:
@@ -167,7 +172,7 @@ def collect_entry_html() -> str:
         return f"\n### index.html\n```html\n{safe_read(index_path)}\n```"
     return "index.html 未找到"
 
-def collect_source_files(extra_dirs: list) -> str:
+def collect_source_files(extra_dirs: list, verbose=False, list_files=False) -> str:
     """收集 src/ 及额外目录下的所有源文件（排除 SVG 内容）"""
     parts = []
     if extra_dirs:
@@ -175,22 +180,30 @@ def collect_source_files(extra_dirs: list) -> str:
     else:
         scan_dirs = get_all_top_level_dirs()
 
-    total = 0
+    total_files = 0
     for d in scan_dirs:
         dir_path = PROJECT_ROOT / d
         if not dir_path.exists():
+            if verbose:
+                print(f"⚠️  目录不存在: {dir_path}")
             continue
         files = [f for f in dir_path.rglob("*") if f.is_file() and not any(should_skip(p.name) for p in f.parents)]
-        total += len(files)
+        total_files += len(files)
+        if verbose:
+            print(f"📁 扫描 {dir_path}: 发现 {len(files)} 个文件")
+        if list_files:
+            for fp in files:
+                rel = fp.relative_to(PROJECT_ROOT)
+                print(f"   {rel}")
         for fp in sorted(files):
             rel = fp.relative_to(PROJECT_ROOT)
             if should_read_content(fp):
                 lang = get_lang(fp.suffix)
                 parts.append(f"\n### {rel}\n```{lang}\n{safe_read(fp)}\n```")
             else:
-                # 仅记录文件名，不显示内容
                 parts.append(f"\n### {rel}\n```\n[文件未显示内容]\n```")
-    print(f"📁 共扫描 {len(scan_dirs)} 个目录，{total} 个文件")
+    if verbose:
+        print(f"📊 共扫描 {len(scan_dirs)} 个目录，{total_files} 个文件")
     return "".join(parts)
 
 def collect_other_files() -> str:
@@ -208,7 +221,7 @@ def collect_other_files() -> str:
     return "".join(parts)
 
 # ==================== 报告生成 ====================
-def generate_report(extra_skips: set, extra_dirs: list) -> str:
+def generate_report(extra_skips: set, extra_dirs: list, verbose=False, list_files=False) -> str:
     if extra_skips:
         SKIP_PATTERNS.update(extra_skips)
 
@@ -228,7 +241,7 @@ def generate_report(extra_skips: set, extra_dirs: list) -> str:
     for d in top_dirs:
         dir_path = PROJECT_ROOT / d
         if dir_path.exists():
-            lines.extend(generate_tree(dir_path, root_label=d))
+            lines.extend(generate_tree(dir_path, root_label=d, verbose=verbose))
 
     # 配置文件
     lines.append("\n\n## 2. 配置文件\n")
@@ -240,7 +253,7 @@ def generate_report(extra_skips: set, extra_dirs: list) -> str:
 
     # 源代码与文档
     lines.append("\n\n## 4. 源代码与文档文件\n")
-    lines.append(collect_source_files(extra_dirs))
+    lines.append(collect_source_files(extra_dirs, verbose, list_files))
 
     # 其他
     lines.append("\n\n## 5. 其他文件\n")
@@ -259,19 +272,33 @@ def parse_args():
                         help='额外扫描的目录（默认所有非忽略目录）')
     parser.add_argument('--output', type=Path, default=OUTPUT_FILE,
                         help='输出文件路径')
+    parser.add_argument('--verbose', action='store_true',
+                        help='输出详细的扫描过程信息')
+    parser.add_argument('--list-files', action='store_true',
+                        help='仅列出所有将被包含的文件，不生成完整报告')
     return parser.parse_args()
 
 # ==================== 主入口 ====================
 if __name__ == "__main__":
     args = parse_args()
-    extra_skips = set(args.skip)
-    extra_dirs = args.extra
+    verbose = args.verbose
+    list_files = args.list_files
+
+    if list_files:
+        print("📋 列出所有将被扫描的文件：")
+        extra_skips = set(args.skip)
+        extra_dirs = args.extra
+        if extra_skips:
+            SKIP_PATTERNS.update(extra_skips)
+        # 只执行文件列表，不生成报告
+        collect_source_files(extra_dirs, verbose=True, list_files=True)
+        sys.exit(0)
 
     print("🔍 开始收集项目信息...")
     start = time.time()
 
     try:
-        report = generate_report(extra_skips, extra_dirs)
+        report = generate_report(set(args.skip), args.extra, verbose=verbose)
     except Exception as e:
         print(f"❌ 报告生成失败: {e}")
         sys.exit(1)

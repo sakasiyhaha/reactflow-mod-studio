@@ -1,9 +1,5 @@
 // src/components/FlowCanvas.tsx
-// 核心画布组件 —— 封装 React Flow 实例，作为画布容器，处理拖放、批量连线、画布右键等交互
-// 所有与 React Flow 直接相关的 props（onNodesChange, onConnect 等）由 App.tsx 传入，本组件仅负责传递和绑定额外事件
-// 右键菜单逻辑现在使用 mod-canvas-context-menu 提供的纯函数
-
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -28,16 +24,15 @@ import CoordinateAxes from './CoordinateAxes';
 import { useEditorBusContext } from '../bus/EditorBusContext';
 import { getAllTemplates } from '../registry/nodeTemplateRegistry';
 import { generateNodeId, getNodeDefaultConfig } from '../utils';
-import { getContextMenuTarget } from '../mods/mod-canvas-context-menu'; // 新增
+import { getContextMenuTarget } from '../mods/mod-canvas-context-menu';
+import { getEdgeTypeMapDynamic } from '../../config/editorConfig';
 import { DEBUG } from '../../config/debug';
 
-/** 批量连线状态结构 */
 interface BatchConnectState {
   sourceNodeIds: string[];
   sourceHandleType: string;
 }
 
-/** FlowCanvas 组件的 Props 接口 */
 interface FlowCanvasProps {
   nodeTypes: NodeTypes;
   nodes: Node[];
@@ -91,13 +86,71 @@ export default function FlowCanvas({
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const bus = useEditorBusContext();
 
-  // ==================== 右键菜单处理（替换原有的 useCanvasContextMenu） ====================
+  // 动态视图控制状态
+  const [minZoom, setMinZoom] = useState(0.2);
+  const [maxZoom, setMaxZoom] = useState(4);
+  const [translateExtent, setTranslateExtent] = useState<[[number, number], [number, number]]>([[-Infinity, -Infinity], [Infinity, Infinity]]);
+  const [panOnDrag, setPanOnDrag] = useState<number[]>([1]);
+  const [showBackground, setShowBackground] = useState(true);
+  const [bgVariant, setBgVariant] = useState<BackgroundVariant>(BackgroundVariant.Dots);
+  const [bgGap, setBgGap] = useState(20);
+  const [bgSize, setBgSize] = useState(1);
+  const [bgColor, setBgColor] = useState('var(--border)');
+
+  // 辅助线状态
+  const [guideLines, setGuideLines] = useState<Array<{ x1: number; y1: number; x2: number; y2: number; color?: string }>>([]);
+
+  // 视图变化去重
+  const viewportRef = useRef({ x: 0, y: 0, zoom: 1 });
+
+  // 监听动态视图控制事件 + 辅助线事件
+  useEffect(() => {
+    const unsub = bus.subscribe(({ event }) => {
+      switch (event.type) {
+        case 'SET_VIEWPORT_LIMITS':
+          if (event.payload.minZoom !== undefined) setMinZoom(event.payload.minZoom);
+          if (event.payload.maxZoom !== undefined) setMaxZoom(event.payload.maxZoom);
+          if (event.payload.translateExtent !== undefined) setTranslateExtent(event.payload.translateExtent);
+          break;
+        case 'SET_PAN_ON_DRAG':
+          setPanOnDrag(event.payload);
+          break;
+        case 'SET_BACKGROUND_STYLE': {
+          const { variant, gap, size, color } = event.payload;
+          if (variant !== undefined) {
+            if (variant === 'none') {
+              setShowBackground(false);
+            } else {
+              setShowBackground(true);
+              const variantMap: Record<string, BackgroundVariant> = {
+                dots: BackgroundVariant.Dots,
+                lines: BackgroundVariant.Lines,
+              };
+              setBgVariant(variantMap[variant] ?? BackgroundVariant.Dots);
+            }
+          }
+          if (gap !== undefined) setBgGap(gap);
+          if (size !== undefined) setBgSize(size);
+          if (color !== undefined) setBgColor(color);
+          break;
+        }
+        case 'RENDER_GUIDE_LINES':
+          setGuideLines(event.payload.lines);
+          break;
+        case 'CLEAR_GUIDE_LINES':
+          setGuideLines([]);
+          break;
+      }
+    });
+    return unsub;
+  }, [bus]);
+
+  // 右键菜单处理
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
 
     const handleContextMenu = (e: MouseEvent) => {
-      // 使用 Mod 提供的纯函数判断目标
       const target = getContextMenuTarget(
         e.clientX,
         e.clientY,
@@ -105,12 +158,9 @@ export default function FlowCanvas({
         getIntersectingNodes,
         nodes
       );
-
-      // 阻止浏览器默认右键菜单
       e.preventDefault();
       e.stopPropagation();
 
-      // 构建模拟 React 事件对象（仅包含必要字段）
       const mockEvent = {
         clientX: e.clientX,
         clientY: e.clientY,
@@ -119,16 +169,13 @@ export default function FlowCanvas({
       } as React.MouseEvent;
 
       if (target.type === 'node') {
-        // 节点右键：找到对应节点对象
         const node = nodes.find(n => n.id === target.nodeId) || null;
         onNodeContextMenu(mockEvent, node);
         if (DEBUG) console.log('[FlowCanvas] 节点右键', target.nodeId);
       } else if (target.type === 'multiple') {
-        // 多选状态右键空白：弹出节点菜单（批量操作），传递 nodeId = null
         onNodeContextMenu(mockEvent, null);
         if (DEBUG) console.log('[FlowCanvas] 多选右键空白');
       } else {
-        // 普通空白右键：弹出画布菜单
         onPaneContextMenu(mockEvent);
         if (DEBUG) console.log('[FlowCanvas] 画布右键');
       }
@@ -138,7 +185,7 @@ export default function FlowCanvas({
     return () => container.removeEventListener('contextmenu', handleContextMenu);
   }, [screenToFlowPosition, getIntersectingNodes, nodes, onNodeContextMenu, onPaneContextMenu]);
 
-  // ==================== 拖放节点处理 ====================
+  // 拖放节点
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -164,7 +211,7 @@ export default function FlowCanvas({
     [screenToFlowPosition, bus]
   );
 
-  // ==================== 批量连线模式下的点击监听 ====================
+  // 批量连线
   useEffect(() => {
     if (!batchConnectState) return;
     const container = canvasContainerRef.current;
@@ -199,14 +246,12 @@ export default function FlowCanvas({
 
     container.addEventListener('click', handleClick);
     window.addEventListener('keydown', handleKeyDown);
-
     return () => {
       container.removeEventListener('click', handleClick);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [batchConnectState, screenToFlowPosition, getIntersectingNodes, executeBatchConnect, cancelBatchConnect]);
 
-  // ==================== 画布空白点击处理 ====================
   const handlePaneClick = useCallback(
     (event: React.MouseEvent) => {
       const target = event.target as HTMLElement;
@@ -225,13 +270,29 @@ export default function FlowCanvas({
     [onPaneDoubleClick]
   );
 
-  // ==================== 渲染 ====================
+  // ========== 画布视图变化事件 ==========
+  const handleMove = useCallback((_event: any, viewport: { x: number; y: number; zoom: number }) => {
+    // 简单去重：避免相同视图反复派发
+    if (viewportRef.current.x === viewport.x && 
+        viewportRef.current.y === viewport.y && 
+        viewportRef.current.zoom === viewport.zoom) {
+      return;
+    }
+    viewportRef.current = viewport;
+    bus.dispatch({
+      type: 'VIEWPORT_CHANGED',
+      payload: viewport,
+    });
+    if (DEBUG) console.log('[FlowCanvas] 视图变化', viewport);
+  }, [bus]);
+
   return (
     <div className="canvas-area" ref={canvasContainerRef}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={getEdgeTypeMapDynamic()}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -250,7 +311,7 @@ export default function FlowCanvas({
         deleteKeyCode={["Delete", "Backspace"]}
         fitView
         fitViewOptions={{ padding: 0.3, maxZoom: 1.0 }}
-        panOnDrag={[1]}
+        panOnDrag={panOnDrag}
         panOnScroll={false}
         selectionOnDrag={true}
         zoomOnScroll={true}
@@ -260,13 +321,16 @@ export default function FlowCanvas({
         selectionMode={SelectionMode.Full}
         proOptions={{ hideAttribution: true }}
         disableKeyboardA11y={true}
-        maxZoom={4}
-        minZoom={0.2}
-        translateExtent={[[-Infinity, -Infinity], [Infinity, Infinity]]}
+        maxZoom={maxZoom}
+        minZoom={minZoom}
+        translateExtent={translateExtent}
         onDoubleClick={handleDoubleClick}
+        onMove={handleMove}   // 新增视图变化监听
       >
         <Controls showZoom showFitView showInteractive={false} />
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
+        {showBackground && (
+          <Background variant={bgVariant} gap={bgGap} size={bgSize} color={bgColor} />
+        )}
         <CoordinateAxes />
         {showMinimap && (
           <MiniMap
@@ -276,6 +340,33 @@ export default function FlowCanvas({
             style={{ width: 180, height: 120 }}
             maskColor="rgba(245, 249, 255, 0.6)"
           />
+        )}
+        {/* 辅助线层 */}
+        {guideLines.length > 0 && (
+          <svg
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+              zIndex: 10,
+            }}
+          >
+            {guideLines.map((line, idx) => (
+              <line
+                key={idx}
+                x1={line.x1}
+                y1={line.y1}
+                x2={line.x2}
+                y2={line.y2}
+                stroke={line.color || '#f59e0b'}
+                strokeWidth={2}
+                strokeDasharray="4,4"
+              />
+            ))}
+          </svg>
         )}
       </ReactFlow>
 

@@ -2,6 +2,7 @@
 // 应用根组件 —— 组装编辑器所有部分（侧边栏、画布、面板、菜单、搜索）
 // 工作流导入导出现在使用 mod-workflow-io
 // 错误提示使用 Toast 组件
+// 主题色动态切换支持
 
 import { customMods } from '../custom-mods/index';
 import { useState, useCallback, useEffect, useMemo } from 'react';
@@ -15,7 +16,7 @@ import ContextMenu from './components/ContextMenu';
 import PaneContextMenu from './components/PaneContextMenu';
 import ConnectionNodeMenu from './components/ConnectionNodeMenu';
 import FloatingSearch from './components/FloatingSearch';
-import ToastContainer, { type ToastMessage } from './components/Toast'; // 新增
+import ToastContainer, { type ToastMessage } from './components/Toast';
 import { useEditorBus } from './bus/useEditorBus';
 import { EditorBusProvider } from './bus/EditorBusContext';
 import { initMods } from './mods/index';
@@ -50,7 +51,7 @@ function AppInner() {
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
     const [paneMenu, setPaneMenu] = useState<{ x: number; y: number } | null>(null);
     const [connectionMenu, setConnectionMenu] = useState<any>(null);
-    const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]); // 新增：Toast 消息列表
+    const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
 
     // 项目设置面板事件驱动
     useEffect(() => {
@@ -98,10 +99,26 @@ function AppInner() {
                     type,
                 };
                 setToastMessages(prev => [...prev, newToast]);
-                // 5 秒后自动移除
                 setTimeout(() => {
                     setToastMessages(prev => prev.filter(t => t.id !== newToast.id));
                 }, 5000);
+            }
+        });
+        return unsub;
+    }, [bus]);
+
+    // ========== 主题颜色动态切换（新增） ==========
+    useEffect(() => {
+        const unsub = bus.subscribe(({ event }) => {
+            if (event.type === 'SET_THEME_COLOR') {
+                const { variable, value } = event.payload;
+                document.documentElement.style.setProperty(variable, value);
+                if (DEBUG) console.log(`[App] 主题变量 ${variable} 已设置为 ${value}`);
+            } else if (event.type === 'SET_THEME_COLORS') {
+                Object.entries(event.payload).forEach(([variable, value]) => {
+                    document.documentElement.style.setProperty(variable, value);
+                });
+                if (DEBUG) console.log('[App] 批量主题颜色已应用');
             }
         });
         return unsub;
@@ -212,7 +229,6 @@ function AppInner() {
     const closeConnectionMenu = useCallback(() => setConnectionMenu(null), []);
     const closeFloatingSearch = useCallback(() => closeSearch(bus), [bus]);
 
-    // 移除 Toast 消息（手动关闭）
     const removeToast = useCallback((id: number) => {
         setToastMessages(prev => prev.filter(t => t.id !== id));
     }, []);
@@ -343,7 +359,6 @@ function AppInner() {
                     />
                 )}
 
-                {/* Toast 提示容器 */}
                 <ToastContainer messages={toastMessages} onClose={removeToast} />
             </div>
         </EditorBusProvider>
