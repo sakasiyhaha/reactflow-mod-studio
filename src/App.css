@@ -398,3 +398,16 @@
   color: #fff;
   border-color: var(--primary);
 }
+/* 内联控件通用样式 */
+.node-controls .control-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.node-controls .control-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 40px;
+}
+/* 保持原有 stepper-row, toggle-row, select-row 样式不变，但为了兼容，可以保留 */

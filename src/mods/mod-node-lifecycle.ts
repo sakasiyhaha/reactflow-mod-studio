@@ -6,7 +6,7 @@
 import type { EditorMod, EditorBus } from '../bus/types';
 import { applyNodeChanges } from '@xyflow/react';
 import { DEBUG } from '../../config/debug';
-
+import { generateEdgeId } from '../utils';
 // ==================== 工具函数（可被继承复用） ====================
 
 /**
@@ -76,7 +76,7 @@ export function createOnConnect(bus: EditorBus) {
       type: 'EDGE_ADDED',
       edge: {
         ...connection,
-        id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: generateEdgeId(),
       },
     });
   };

@@ -34,6 +34,8 @@ let builtInTemplates: NodeTemplate[] = [
         inputs: [{ id: 'input', label: '输入', type: '*', position: 'left' }],
         defaultData: { value: 0, label: '显示输出' },
         properties: { value: { type: 'number', default: 0 }, label: { type: 'string', default: '显示输出' } },
+        defaultWidth: 140,
+        defaultHeight: 500,
     },
     {
         type: 'adder',

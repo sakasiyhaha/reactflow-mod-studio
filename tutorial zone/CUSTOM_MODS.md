@@ -189,7 +189,7 @@ export const loggingConnectionMenuMod: EditorMod = {
 
 ---
 
-## 动态扩展画布行为（新增）
+## 动态扩展画布行为
 
 你可以通过派发事件来动态控制画布的视图、背景、辅助线和主题。
 
@@ -359,6 +359,23 @@ registerEdgeType('dashed', DashedEdge);
 ```
 
 之后在添加边时，指定 `type: 'dashed'` 即可使用该边样式。
+
+### 7. 内联控件类型注册中心
+
+使用 `src/registry/controlComponentRegistry.ts`：
+
+```typescript
+import { registerControlType } from '../src/registry/controlComponentRegistry';
+import type { ControlComponentProps } from '../src/registry/controlComponentRegistry';
+
+const ColorPicker: React.FC<ControlComponentProps> = ({ value, onChange }) => (
+  <input type="color" value={value || '#000000'} onChange={(e) => onChange(e.target.value)} />
+);
+
+registerControlType('color-picker', ColorPicker);
+```
+
+然后在节点模板的 `inlineControls` 中使用 `type: 'color-picker'`。
 
 ---
 

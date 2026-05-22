@@ -1,5 +1,6 @@
 // src/components/PropsPanel.tsx
 // 属性面板 —— 右侧面板，支持动态扩展槽（顶部/底部）
+// 增加调试日志以追踪节点数据同步
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import CollapseButton from './CollapseButton';
@@ -12,18 +13,26 @@ import type { CustomNode } from '../utils/types';
 interface PropertyItemConfig { type: string; default: unknown; }
 
 interface PropsPanelProps {
-    collapsed: boolean;       // 是否折叠
-    onToggle: () => void;     // 折叠切换
-    selectedNode: CustomNode | null;  // 当前选中的节点
-    updateNodeData: (id: string, data: Record<string, unknown>) => void; // 更新节点数据的回调
+    collapsed: boolean;
+    onToggle: () => void;
+    selectedNode: CustomNode | null;
+    updateNodeData: (id: string, data: Record<string, unknown>) => void;
 }
 
 export default function PropsPanel({ collapsed, onToggle, selectedNode, updateNodeData }: PropsPanelProps) {
     const bus = useEditorBusContext();
     const [localData, setLocalData] = useState<Record<string, unknown>>(selectedNode?.data ?? {});
 
+    // 监听 selectedNode 变化，同步本地编辑数据
     useEffect(() => {
-        if (selectedNode) { setLocalData(selectedNode.data); } else { setLocalData({}); }
+        if (DEBUG) {
+            console.log('[PropsPanel] 🟢 selectedNode 变化:', selectedNode?.id, selectedNode?.data);
+        }
+        if (selectedNode) {
+            setLocalData(selectedNode.data);
+        } else {
+            setLocalData({});
+        }
     }, [selectedNode]);
 
     const propertyConfig = useMemo((): Record<string, PropertyItemConfig> => {
@@ -41,11 +50,16 @@ export default function PropsPanel({ collapsed, onToggle, selectedNode, updateNo
             if (isNaN(newValue as number)) newValue = (config.default as number) ?? 0;
         }
         setLocalData((prev) => ({ ...prev, [key]: newValue }));
+        if (DEBUG) {
+            console.log(`[PropsPanel] ✏️ 属性编辑: key=${key}, newValue=${newValue}`);
+        }
     }, [propertyConfig]);
 
     const commitUpdate = useCallback(() => {
         if (selectedNode) {
-            if (DEBUG) console.log('[PropsPanel] 提交更新:', selectedNode.id, localData);
+            if (DEBUG) {
+                console.log(`[PropsPanel] 💾 提交节点数据更新: ${selectedNode.id}`, localData);
+            }
             updateNodeData(selectedNode.id, localData);
         }
     }, [selectedNode, localData, updateNodeData]);
@@ -88,6 +102,11 @@ export default function PropsPanel({ collapsed, onToggle, selectedNode, updateNo
                                                 onBlur={commitUpdate}
                                                 onKeyDown={handleKeyDown}
                                             />
+                                            {DEBUG && (
+                                                <span style={{ fontSize: 10, color: 'gray', marginLeft: 8 }}>
+                                                    (localData[{key}] = {String(localData[key])})
+                                                </span>
+                                            )}
                                         </div>
                                     ))
                                 ) : (

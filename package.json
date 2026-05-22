@@ -2,16 +2,21 @@
   "name": "reactflow-mod-studio",
   "license": "MIT",
   "private": false,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
-    "scripts": {
-        "dev": "vite",
-        "build": "vite build",
-        "lint": "eslint .",
-        "preview": "vite preview",
-        "typecheck": "tsc --noEmit"
-    },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
+    "@fortawesome/fontawesome-svg-core": "^7.2.0",
+    "@fortawesome/free-brands-svg-icons": "^7.2.0",
+    "@fortawesome/free-regular-svg-icons": "^7.2.0",
+    "@fortawesome/free-solid-svg-icons": "^7.2.0",
+    "@fortawesome/react-fontawesome": "^3.3.1",
     "@xyflow/react": "^12.10.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

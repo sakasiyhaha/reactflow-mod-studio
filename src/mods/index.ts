@@ -21,6 +21,9 @@ import { DEBUG } from '../../config/debug';
 import { modFloatingSearch } from './mod-floating-search';
 import { modWorkflowIO } from './mod-workflow-io';
 import { modErrorHandler } from './mod-error-handler';
+import { modDefaultControls } from './mod-default-controls';
+import { modDefaultSidebarButtons } from './mod-default-sidebar-buttons';
+
 
 export function initMods(bus: EditorBus, extraMods: EditorMod[] = []): () => void {
   // ==================== 1. 定义内置 Mod 列表 ====================
@@ -37,6 +40,8 @@ export function initMods(bus: EditorBus, extraMods: EditorMod[] = []): () => voi
     modFloatingSearch,
     modWorkflowIO,
     modErrorHandler,
+    modDefaultControls,
+    modDefaultSidebarButtons,
   ];
 
   // 构建内置 Mod 的 fallback 映射

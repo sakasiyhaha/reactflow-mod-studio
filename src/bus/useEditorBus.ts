@@ -2,10 +2,12 @@
 // 事件总线 React Hook 实现
 // 使用 useReducer 管理状态，提供 dispatch / subscribe / getState
 // 修复：确保订阅者在微任务中读取到的 stateRef 是最新状态（解决历史记录、自动保存等 Mod 拿到旧状态的问题）
+// 修复：在 WORKFLOW_LOADED 时同步 ID 计数器，避免新节点 ID 冲突
 
 import { useReducer, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { EditorState, EditorEvent, EditorBus, Listener } from './types';
 import { applyDownstreamValues } from '../utils/nodeHelpers';
+import { syncIdCounter } from '../utils';
 import { DEBUG } from '../../config/debug';
 
 // ==================== Reducer：根据事件纯函数更新状态 ====================
@@ -15,7 +17,7 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
     case 'NODE_ADDED': {
       if (state.nodes.some(n => n.id === event.node.id)) {
         if (DEBUG) console.warn(`[Bus] NODE_ADDED 重复 ID: ${event.node.id}，已忽略`);
-        return state; // 直接返回原状态，不触发重渲染
+        return state;
       }
       if (DEBUG) console.log(`[Bus] NODE_ADDED`, event.node.id);
       return { ...state, nodes: [...state.nodes, event.node] };
@@ -42,14 +44,14 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
       };
     }
 
-    // 更新节点数据，同时支持向下游传播 value 变化（如数值输入传给显示输出）
+    // 更新节点数据，同时支持向下游传播 value 变化
     case 'NODE_DATA_CHANGED': {
-      if (DEBUG) console.log(`[Bus] NODE_DATA_CHANGED`, event.nodeId);
+      if (DEBUG) console.log(`[Bus] 🛠️ NODE_DATA_CHANGED: nodeId=${event.nodeId}, data=`, event.data, `propagate=${event.propagate !== false}`);
       let newNodes = state.nodes.map(n =>
         n.id === event.nodeId ? { ...n, data: { ...n.data, ...event.data } } : n
       );
-      // 如果包含了 value 且 propagate 不为 false，则传播到下游节点
       if (event.propagate !== false && event.data.value !== undefined) {
+        if (DEBUG) console.log(`[Bus] 📡 传播 value 到下游节点`);
         newNodes = applyDownstreamValues(event.nodeId, event.data.value, newNodes, state.edges);
       }
       return { ...state, nodes: newNodes };
@@ -96,7 +98,7 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
       if (DEBUG) console.log(`[Bus] EDGE_RECONNECTED`, event.oldEdgeId);
       const newEdge = {
         ...event.newConnection,
-        id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, // 生成新 ID
+        id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       };
       return {
         ...state,
@@ -104,9 +106,8 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
       };
     }
 
-    // 选中变化：更新 selection 列表，同时同步节点的 selected 属性（供 React Flow 高亮）
+    // 选中变化
     case 'SELECTION_CHANGED': {
-      // 如果选中内容没有改变，则跳过（防止无限循环）
       if (
         state.selection.length === event.nodeIds.length &&
         state.selection.every((id, idx) => id === event.nodeIds[idx])
@@ -128,9 +129,10 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
       return { ...state, mode: event.mode };
     }
 
-    // 加载工作流：替换所有节点和边，清空选中和模式
+    // 加载工作流：替换所有节点和边，清空选中和模式，并同步 ID 计数器
     case 'WORKFLOW_LOADED': {
       if (DEBUG) console.log(`[Bus] WORKFLOW_LOADED`);
+      syncIdCounter(event.nodes); // 关键修复
       return {
         ...state,
         nodes: event.nodes,
@@ -140,12 +142,12 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
       };
     }
 
-    // 内部使用：直接替换节点数组（用于与 React Flow 内部状态同步）
+    // 内部同步节点数组
     case 'APPLY_NODE_CHANGES': {
       return { ...state, nodes: event.nodes };
     }
 
-    // 以下事件不直接修改状态，由 Mod 监听后产生实际效果
+    // 以下事件不直接修改状态
     case 'HISTORY_UNDO':
     case 'HISTORY_REDO':
     case 'BATCH_CONNECT_START':
@@ -171,28 +173,18 @@ const initialState: EditorState = {
 // ==================== 自定义 Hook ====================
 export function useEditorBus() {
   const [state, dispatch] = useReducer(editorReducer, initialState);
-
-  // 始终保持最新的 state 引用，供回调中同步读取
   const stateRef = useRef(state);
-  // 注意：stateRef 的更新不再依赖 useEffect，而是在 busDispatch 中手动同步
-  // 这里仅用于初始化，后续更新完全由 busDispatch 负责
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
-  // 订阅者存储，使用 Map 便于移除
   const listenersRef = useRef<Map<number, Listener>>(new Map());
   const nextIdRef = useRef(0);
 
-  // 派发事件：修复核心 bug —— 确保订阅者拿到的是更新后的最新状态
   const busDispatch = useCallback((event: EditorEvent) => {
-    // 关键修复：手动调用 reducer 计算新状态（reducer 是纯函数，无副作用）
     const newState = editorReducer(stateRef.current, event);
-    // 立即更新 stateRef，保证在微任务执行前 stateRef 已是最新
     stateRef.current = newState;
-    // 调用 React 的 dispatch，触发组件重渲染（同步更新 UI）
     dispatch(event);
-    // 在微任务中通知所有订阅者，此时 stateRef.current 已经是最新状态
     Promise.resolve().then(() => {
       const currentState = stateRef.current;
       listenersRef.current.forEach((listener) => {
@@ -205,7 +197,6 @@ export function useEditorBus() {
     });
   }, []);
 
-  // 订阅：返回取消订阅函数
   const subscribe = useCallback((listener: Listener) => {
     const id = nextIdRef.current++;
     listenersRef.current.set(id, listener);
@@ -214,12 +205,10 @@ export function useEditorBus() {
     };
   }, []);
 
-  // 获取最新状态（非响应式，用于事件回调中）
   const getState = useCallback((): EditorState => {
     return stateRef.current;
   }, []);
 
-  // 使用 useMemo 稳定 bus 对象引用，避免父组件不必要的 effect 重复注册
   const bus: EditorBus = useMemo(() => ({
     getState,
     dispatch: busDispatch,

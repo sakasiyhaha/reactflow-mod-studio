@@ -6,6 +6,8 @@
 }
 
 :root {
+  --coordinate-axis-color: rgba(128, 128, 128, 0.15);
+  --coordinate-axis-dot-color: rgba(128, 128, 128, 0.25);
   /* --- 主题色彩（保留原有） --- */
   --primary: #4D9EFF;
   --secondary: #36D399;

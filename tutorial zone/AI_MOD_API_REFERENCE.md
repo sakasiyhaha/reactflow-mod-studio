@@ -179,6 +179,8 @@ interface EditorState {
 | 浮动搜索 | `floating-search` | 双击画布空白弹出搜索框 |
 | 工作流导入导出 | `workflow-io` | JSON 导入/导出，支持替换处理器（YAML 等） |
 | 错误处理 | `error-handler` | 捕获错误并派发 `ERROR_OCCURRED` 事件 |
+| 默认控件 | `default-controls` | 注册内置的内联控件类型（步进器、开关、下拉） |
+| 默认侧边栏按钮 | `default-sidebar-buttons` | 注册默认的侧边栏按钮（自动布局、小地图、保存、加载） |
 
 ---
 
@@ -214,6 +216,8 @@ interface NodeTemplate {
     defaultData: Record<string, unknown>;                // 新节点的默认数据
     properties: Record<string, { type: string; default: unknown }>; // 可编辑属性
     inlineControls?: InlineControl[];                    // 内联控件（步进器、开关等）
+    defaultWidth?: number;                               // 节点默认宽度（像素）
+    defaultHeight?: number;                              // 节点默认高度（像素）
 }
 
 interface PortDefinition {
@@ -251,38 +255,78 @@ registerEdgeType('dashed', DashedEdge);
 
 ---
 
-## 7. UI 扩展注册中心
+## 7. 内联控件注册 API
+
+从 `src/registry/controlComponentRegistry` 导入：
+
+- **`registerControlType(type: string, component: React.ComponentType<ControlComponentProps>): void`**  
+  注册自定义内联控件类型（如颜色选择器、滑块）。
+
+- **`getControlComponent(type: string): React.ComponentType<ControlComponentProps> | undefined`**  
+
+控件组件 Props：
+```typescript
+interface ControlComponentProps {
+  value: any;                                    // 当前值
+  onChange: (newValue: any) => void;             // 值变更回调
+  label?: string;                                // 可选标签
+  [key: string]: any;                            // 其他配置（如 min, max, step）
+}
+```
+
+示例：
+```typescript
+import { registerControlType } from '../src/registry/controlComponentRegistry';
+
+const ColorPicker = ({ value, onChange }) => (
+  <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
+);
+
+registerControlType('color-picker', ColorPicker);
+```
+
+---
+
+## 8. UI 扩展注册中心
 
 以下注册中心允许 Mod 动态扩展界面，无需修改核心组件。
 
-### 7.1 项目设置面板配置项
+### 8.1 项目设置面板配置项
 从 `src/registry/projectConfigRegistry` 导入：
 - `registerProjectConfigField(field: ConfigField)`
 - `getRegisteredConfigFields()`
 
-### 7.2 侧边栏按钮
+### 8.2 侧边栏按钮
 从 `src/registry/sidebarRegistry` 导入：
 - `registerSidebarButton(button: SidebarButton)`
 - `getSidebarButtons()`
 
-### 7.3 右键菜单项
+### 8.3 右键菜单项
 从 `src/registry/contextMenuRegistry` 导入：
 - `registerNodeMenuItem(item: MenuItem)`
 - `registerPaneMenuItem(item: MenuItem)`
 
-### 7.4 属性面板扩展槽
+### 8.4 属性面板扩展槽
 从 `src/registry/propsPanelRegistry` 导入：
 - `registerPropsPanelExtension(extension: PropsPanelExtension)`
 
-### 7.5 浮动搜索过滤器
+### 8.5 浮动搜索过滤器
 从 `src/utils/searchExtensions` 导入：
 - `registerSearchFilter(filter: SearchFilter)`
+
+### 8.6 批量连线端口匹配策略
+从 `src/registry/batchConnectStrategyRegistry` 导入：
+- `registerBatchConnectStrategy(strategy: BatchConnectStrategy, priority?: number)`
+
+### 8.7 历史记录忽略事件
+从 `src/registry/historyIgnoreRegistry` 导入：
+- `registerHistoryIgnoredEventType(eventType: string)`
 
 具体参数类型请参考源代码或 `CUSTOM_MODS.md` 中的示例。
 
 ---
 
-## 8. 常用工具函数
+## 9. 常用工具函数
 
 从 `src/utils` 导入：
 
@@ -306,7 +350,7 @@ registerEdgeType('dashed', DashedEdge);
 
 ---
 
-## 9. 可扩展的工具函数（供继承使用）
+## 10. 可扩展的工具函数（供继承使用）
 
 以下内置 Mod 导出了可复用的函数，你可以在自己的 Mod 中直接调用或包装它们：
 
@@ -354,9 +398,9 @@ export function importWorkflowData(bus: EditorBus): Promise<void>;
 
 ---
 
-## 10. Mod 编写模式示例
+## 11. Mod 编写模式示例
 
-### 10.1 订阅事件并执行副作用
+### 11.1 订阅事件并执行副作用
 ```typescript
 export const myMod: EditorMod = {
     id: 'my-mod',
@@ -371,13 +415,13 @@ export const myMod: EditorMod = {
 };
 ```
 
-### 10.2 主动派发事件
+### 11.2 主动派发事件
 ```typescript
 bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: ['node_1', 'node_2'] });
 bus.dispatch({ type: 'AUTO_LAYOUT' });
 ```
 
-### 10.3 注册自定义节点模板
+### 11.3 注册自定义节点模板
 ```typescript
 import { registerNodeTemplates } from '../src/registry/nodeTemplateRegistry';
 
@@ -390,7 +434,7 @@ export const myTemplateMod: EditorMod = {
 };
 ```
 
-### 10.4 注册自定义边类型
+### 11.4 注册自定义边类型
 ```typescript
 import { registerEdgeType } from '../src/registry/edgeTemplateRegistry';
 
@@ -403,7 +447,7 @@ export const myEdgeMod: EditorMod = {
 };
 ```
 
-### 10.5 动态调整画布视图
+### 11.5 动态调整画布视图
 ```typescript
 bus.dispatch({
     type: 'SET_VIEWPORT_LIMITS',
@@ -411,7 +455,7 @@ bus.dispatch({
 });
 ```
 
-### 10.6 动态切换主题
+### 11.6 动态切换主题
 ```typescript
 bus.dispatch({
     type: 'SET_THEME_COLORS',
@@ -421,7 +465,7 @@ bus.dispatch({
 
 ---
 
-## 11. 防御降级机制
+## 12. 防御降级机制
 
 当自定义 Mod 在 `init` 中抛出异常时，系统会：
 - 输出红色错误日志。
@@ -432,7 +476,7 @@ bus.dispatch({
 
 ---
 
-## 12. 重要注意事项
+## 13. 重要注意事项
 
 - Mod 的 `id` 必须全局唯一，建议使用命名空间（如 `'my-plugin-logger'`）。
 - `init` 函数中返回的清理函数用于移除事件监听、定时器等，避免内存泄漏。

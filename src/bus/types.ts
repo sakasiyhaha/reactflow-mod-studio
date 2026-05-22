@@ -6,6 +6,7 @@
 import type { CustomNode, CustomEdge } from '../utils/types'; // 自定义节点/边类型
 import type { Connection, XYPosition } from '@xyflow/react';  // React Flow 连接类型
 
+
 // ==================== 编辑器模式 ====================
 /**
  * 编辑器当前所处的操作模式
@@ -91,8 +92,15 @@ export type EditorEvent =
       direction: 'forward' | 'reverse';
     } }
   | { type: 'CONNECTION_MENU_CLOSE' }
+    // ---------- 侧边栏按钮事件 ----------
+  | { type: 'TOGGLE_MINIMAP' }
+  | { type: 'SAVE_WORKFLOW' }
+  | { type: 'LOAD_WORKFLOW' }
   // ---------- 内部同步 ----------
   | { type: 'APPLY_NODE_CHANGES'; nodes: CustomNode[] }
+    // ---------- 布局折叠 ----------
+  | { type: 'SET_LEFT_COLLAPSED'; payload: boolean }
+  | { type: 'SET_RIGHT_COLLAPSED'; payload: boolean }
   // ---------- 错误处理 ----------
   | { type: 'ERROR_OCCURRED'; error: { message: string; type?: 'info' | 'warning' | 'error'; details?: any } }
   // ---------- 浮动搜索 ----------

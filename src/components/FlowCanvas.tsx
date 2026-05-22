@@ -26,6 +26,8 @@ import { getAllTemplates } from '../registry/nodeTemplateRegistry';
 import { generateNodeId, getNodeDefaultConfig } from '../utils';
 import { getContextMenuTarget } from '../mods/mod-canvas-context-menu';
 import { getEdgeTypeMapDynamic } from '../../config/editorConfig';
+import { getBatchConnectTargetPort } from '../registry/batchConnectStrategyRegistry';
+import { DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT } from '../../config/editorConfig';
 import { DEBUG } from '../../config/debug';
 
 interface BatchConnectState {
@@ -99,8 +101,6 @@ export default function FlowCanvas({
 
   // 辅助线状态
   const [guideLines, setGuideLines] = useState<Array<{ x1: number; y1: number; x2: number; y2: number; color?: string }>>([]);
-
-  // 视图变化去重
   const viewportRef = useRef({ x: 0, y: 0, zoom: 1 });
 
   // 监听动态视图控制事件 + 辅助线事件
@@ -185,7 +185,7 @@ export default function FlowCanvas({
     return () => container.removeEventListener('contextmenu', handleContextMenu);
   }, [screenToFlowPosition, getIntersectingNodes, nodes, onNodeContextMenu, onPaneContextMenu]);
 
-  // 拖放节点
+  // 拖放节点（动态偏移）
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -198,12 +198,21 @@ export default function FlowCanvas({
       if (!type) return;
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       const defaultData = getNodeDefaultConfig(type);
+      // 获取模板默认尺寸
+      const template = getAllTemplates().find(t => t.type === type);
+      const defaultWidth = template?.defaultWidth ?? DEFAULT_NODE_WIDTH;
+      const defaultHeight = template?.defaultHeight ?? DEFAULT_NODE_HEIGHT;
+      // 节点中心对齐鼠标位置
+      const nodePosition = {
+        x: position.x - defaultWidth / 2,
+        y: position.y - defaultHeight / 2,
+      };
       bus.dispatch({
         type: 'NODE_ADDED',
         node: {
           id: generateNodeId(),
           type,
-          position: { x: position.x - 80, y: position.y - 40 },
+          position: nodePosition,
           data: { _nodeType: type, ...defaultData },
         },
       });
@@ -226,12 +235,21 @@ export default function FlowCanvas({
       if (intersections && intersections.length > 0) {
         const targetNode = intersections[0];
         const targetTemplate = getAllTemplates().find(t => t.type === targetNode.type);
-        const matchingInput =
-          targetTemplate?.inputs?.find(
-            i => i.type === (batchConnectState.sourceHandleType || '*')
-          ) ?? targetTemplate?.inputs?.[0];
+        if (!targetTemplate) return;
+
+        const sourceNodeId = batchConnectState.sourceNodeIds[0];
+        const sourceNode = nodes.find(n => n.id === sourceNodeId);
+
+        const matchingInput = getBatchConnectTargetPort(
+          sourceNode!,
+          batchConnectState.sourceHandleType,
+          targetNode,
+          targetTemplate,
+          edges
+        );
+
         if (matchingInput) {
-          executeBatchConnect(targetNode.id, matchingInput.id);
+          executeBatchConnect(targetNode.id, matchingInput);
           return;
         }
       }
@@ -250,7 +268,7 @@ export default function FlowCanvas({
       container.removeEventListener('click', handleClick);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [batchConnectState, screenToFlowPosition, getIntersectingNodes, executeBatchConnect, cancelBatchConnect]);
+  }, [batchConnectState, screenToFlowPosition, getIntersectingNodes, executeBatchConnect, cancelBatchConnect, nodes, edges]);
 
   const handlePaneClick = useCallback(
     (event: React.MouseEvent) => {
@@ -270,9 +288,7 @@ export default function FlowCanvas({
     [onPaneDoubleClick]
   );
 
-  // ========== 画布视图变化事件 ==========
   const handleMove = useCallback((_event: any, viewport: { x: number; y: number; zoom: number }) => {
-    // 简单去重：避免相同视图反复派发
     if (viewportRef.current.x === viewport.x && 
         viewportRef.current.y === viewport.y && 
         viewportRef.current.zoom === viewport.zoom) {
@@ -325,7 +341,7 @@ export default function FlowCanvas({
         minZoom={minZoom}
         translateExtent={translateExtent}
         onDoubleClick={handleDoubleClick}
-        onMove={handleMove}   // 新增视图变化监听
+        onMove={handleMove}
       >
         <Controls showZoom showFitView showInteractive={false} />
         {showBackground && (
@@ -341,7 +357,6 @@ export default function FlowCanvas({
             maskColor="rgba(245, 249, 255, 0.6)"
           />
         )}
-        {/* 辅助线层 */}
         {guideLines.length > 0 && (
           <svg
             style={{

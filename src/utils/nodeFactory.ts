@@ -1,7 +1,6 @@
 // src/utils/nodeFactory.ts
-// 节点创建工厂函数 —— 统一生成新节点，避免在多处重复 ID 和默认数据逻辑
-
 import { generateNodeId, getNodeDefaultConfig } from './index';
+import { getAllTemplates } from '../registry/nodeTemplateRegistry';
 import type { CustomNode } from './types';
 
 /**
@@ -14,12 +13,21 @@ export function createNode(
   type: string,
   position: { x: number; y: number } = { x: 250, y: 200 }
 ): CustomNode {
-  const id = generateNodeId();                     // 生成唯一 ID
-  const defaultData = getNodeDefaultConfig(type);  // 从模板获取默认数据
+  const id = generateNodeId();
+  const defaultData = getNodeDefaultConfig(type);
+  const template = getAllTemplates().find(t => t.type === type);
+  // 将模板的默认宽高注入到节点的 data 中（供对齐/布局使用）
+  const extraData: Record<string, unknown> = {};
+  if (template?.defaultWidth !== undefined) {
+    extraData.__templateDefaultWidth = template.defaultWidth;
+  }
+  if (template?.defaultHeight !== undefined) {
+    extraData.__templateDefaultHeight = template.defaultHeight;
+  }
   return {
     id,
     type,
     position,
-    data: { _nodeType: type, ...defaultData },
+    data: { _nodeType: type, ...defaultData, ...extraData },
   };
 }

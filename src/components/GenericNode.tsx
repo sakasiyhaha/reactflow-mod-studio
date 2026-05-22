@@ -27,6 +27,7 @@ const GenericNode = memo(({ data, id }: NodeProps<CustomNode>) => {
      * 派发 NODE_DATA_CHANGED 事件，reducer 会合并数据并传播 value 变化到下游
      */
     const updateNodeData = (nodeId: string, newData: Record<string, unknown>) => {
+        console.log(`[GenericNode] 📤 派发 NODE_DATA_CHANGED: nodeId=${nodeId}, newData=`, newData);
         bus.dispatch({ type: 'NODE_DATA_CHANGED', nodeId, data: newData });
     };
 

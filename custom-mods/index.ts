@@ -11,9 +11,9 @@ export const customMods: EditorMod[] = [
     //customEdgeMod,
     //testOverrideHistoryMod,  //
     //testBrokenMod,
-    //exampleAutoSaveMod,
-    //autoLoadMod,
-    //exampleAddTemplateMod,
+    exampleAutoSaveMod,
+    autoLoadMod,
+    exampleAddTemplateMod,
     // 如果需要覆盖，取消下一行的注释即可
     //exampleReplaceTemplateMod,
     //testGuideLinesMod,

@@ -3,6 +3,7 @@
 // 工作流导入导出现在使用 mod-workflow-io
 // 错误提示使用 Toast 组件
 // 主题色动态切换支持
+// 侧边栏按钮通过事件驱动
 
 import { customMods } from '../custom-mods/index';
 import { useState, useCallback, useEffect, useMemo } from 'react';
@@ -29,6 +30,7 @@ import { openSearch, closeSearch } from './mods/mod-floating-search';
 import { exportWorkflowData, importWorkflowData } from './mods/mod-workflow-io';
 import { getAllTemplates } from './registry/nodeTemplateRegistry';
 import { createNode } from './utils/nodeFactory';
+import { generateEdgeId } from './utils'; // 新增
 import './App.css';
 import { DEBUG } from '../config/debug';
 import type { CustomNode } from './utils/types';
@@ -38,13 +40,11 @@ function AppInner() {
     const { state, bus } = useEditorBus();
     const layout = useLayout();
 
-    // 注册所有 Mod（内置 + 用户自定义）
     useEffect(() => {
         const cleanup = initMods(bus, customMods);
         return cleanup;
     }, [bus]);
 
-    // 本地 UI 状态
     const [configPanelVisible, setConfigPanelVisible] = useState(false);
     const [floatingSearch, setFloatingSearch] = useState<{ x: number; y: number } | null>(null);
     const [showMinimap, setShowMinimap] = useState(false);
@@ -53,7 +53,6 @@ function AppInner() {
     const [connectionMenu, setConnectionMenu] = useState<any>(null);
     const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
 
-    // 项目设置面板事件驱动
     useEffect(() => {
         const unsub = bus.subscribe(({ event }) => {
             if (event.type === 'PROJECT_CONFIG_TOGGLE_PANEL') {
@@ -63,7 +62,6 @@ function AppInner() {
         return unsub;
     }, [bus]);
 
-    // 监听连接菜单事件
     useEffect(() => {
         const unsub = bus.subscribe(({ event }) => {
             if (event.type === 'CONNECTION_MENU_OPEN') {
@@ -75,7 +73,6 @@ function AppInner() {
         return unsub;
     }, [bus]);
 
-    // 监听浮动搜索事件
     useEffect(() => {
         const unsub = bus.subscribe(({ event }) => {
             if (event.type === 'FLOATING_SEARCH_OPEN') {
@@ -87,7 +84,6 @@ function AppInner() {
         return unsub;
     }, [bus]);
 
-    // 监听错误事件，添加 Toast 消息
     useEffect(() => {
         const unsub = bus.subscribe(({ event }) => {
             if (event.type === 'ERROR_OCCURRED') {
@@ -107,7 +103,6 @@ function AppInner() {
         return unsub;
     }, [bus]);
 
-    // ========== 主题颜色动态切换（新增） ==========
     useEffect(() => {
         const unsub = bus.subscribe(({ event }) => {
             if (event.type === 'SET_THEME_COLOR') {
@@ -123,6 +118,19 @@ function AppInner() {
         });
         return unsub;
     }, [bus]);
+
+    useEffect(() => {
+        const unsub = bus.subscribe(({ event }) => {
+            if (event.type === 'TOGGLE_MINIMAP') {
+                setShowMinimap(prev => !prev);
+            } else if (event.type === 'SAVE_WORKFLOW') {
+                exportWorkflowData(state.nodes, state.edges);
+            } else if (event.type === 'LOAD_WORKFLOW') {
+                importWorkflowData(bus);
+            }
+        });
+        return unsub;
+    }, [bus, state.nodes, state.edges]);
 
     const selectedNode = state.nodes.find(n => n.id === state.selection[0]) ?? null;
     const processedNodes = useMemo(() =>
@@ -149,21 +157,6 @@ function AppInner() {
             openSearch(bus, event.clientX, event.clientY);
         }
     }, [bus]);
-
-    // 工作流导入导出
-    const handleSaveWorkflow = useCallback(() => {
-        exportWorkflowData(state.nodes, state.edges);
-    }, [state.nodes, state.edges]);
-
-    const handleLoadWorkflow = useCallback(async () => {
-        await importWorkflowData(bus);
-    }, [bus]);
-
-    const handleAutoLayout = useCallback(() => {
-        bus.dispatch({ type: 'AUTO_LAYOUT' });
-    }, [bus]);
-
-    const toggleMinimap = useCallback(() => setShowMinimap(prev => !prev), []);
 
     const rightPanel = configPanelVisible ? (
         <ProjectConfigPanel />
@@ -195,7 +188,6 @@ function AppInner() {
         }
     }, [state.selection]);
 
-    // React Flow 回调适配器
     const onNodesChange: OnNodesChange = useCallback(
         (changes) => createOnNodesChange(bus)(changes),
         [bus]
@@ -240,11 +232,6 @@ function AppInner() {
                     collapsed={layout.leftCollapsed}
                     onToggle={layout.toggleLeft}
                     addNode={handleAddNodeFromClick}
-                    onSaveWorkflow={handleSaveWorkflow}
-                    onLoadWorkflow={handleLoadWorkflow}
-                    onAutoLayout={handleAutoLayout}
-                    onToggleMinimap={toggleMinimap}
-                    showMinimap={showMinimap}
                 />
                 <FlowCanvas
                     nodeTypes={nodeTypeMap}
@@ -318,7 +305,7 @@ function AppInner() {
                                         sourceHandle: srcHandle,
                                         target: newNode.id,
                                         targetHandle: targetTemplate.inputs[0].id,
-                                        id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                                        id: generateEdgeId(),
                                     },
                                 });
                             }
@@ -336,7 +323,7 @@ function AppInner() {
                                         sourceHandle: sourceTemplate.outputs[0].id,
                                         target: targetId,
                                         targetHandle: targetHandle,
-                                        id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                                        id: generateEdgeId(),
                                     },
                                 });
                             }

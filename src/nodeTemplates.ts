@@ -39,4 +39,6 @@ export interface NodeTemplate {
     defaultData: Record<string, unknown>;
     properties: Record<string, { type: string; default: unknown }>;
     inlineControls?: InlineControl[];
+    defaultWidth?: number;   // 新增：节点默认宽度（像素）
+    defaultHeight?: number;  // 新增：节点默认高度（像素）
 }

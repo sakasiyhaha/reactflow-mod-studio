@@ -7,7 +7,7 @@
 import type { EditorMod, EditorBus } from '../bus/types';
 import { getAllTemplates } from '../registry/nodeTemplateRegistry';
 import { DEBUG } from '../../config/debug';
-
+import { generateEdgeId } from '../utils';
 /**
  * 批量连线期间的临时状态
  */
@@ -93,7 +93,7 @@ export const modBatchConnect: EditorMod = {
           newEdges.forEach(edge => {
             const edgeWithId = {
               ...edge,
-              id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              id: generateEdgeId(),
             };
             bus.dispatch({ type: 'EDGE_ADDED', edge: edgeWithId });
           });
