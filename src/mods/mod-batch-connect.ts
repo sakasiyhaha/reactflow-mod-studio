@@ -3,11 +3,13 @@
 // 替代 useBatchConnect 中的状态管理与边创建逻辑
 // 画布点击/ESC 等交互仍由 FlowCanvas 组件处理，组件会 dispatch 相应事件
 // 现在使用 getAllTemplates() 动态获取模板
+// 为批量连线创建的边添加 type: 'gradient' 以使用渐变样式
 
 import type { EditorMod, EditorBus } from '../bus/types';
 import { getAllTemplates } from '../registry/nodeTemplateRegistry';
 import { DEBUG } from '../../config/debug';
 import { generateEdgeId } from '../utils';
+
 /**
  * 批量连线期间的临时状态
  */
@@ -86,6 +88,7 @@ export const modBatchConnect: EditorMod = {
               sourceHandle: sourcePort.id,
               target: targetNodeId,
               targetHandle: targetHandleId,
+              type: 'gradient',   // 使用自定义渐变边组件
             });
           });
 

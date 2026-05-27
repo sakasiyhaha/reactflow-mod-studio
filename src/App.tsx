@@ -4,6 +4,7 @@
 // 错误提示使用 Toast 组件
 // 主题色动态切换支持
 // 侧边栏按钮通过事件驱动
+// 新增：全局加载状态（导出/导入时显示遮罩）
 
 import { customMods } from '../custom-mods/index';
 import { useState, useCallback, useEffect, useMemo } from 'react';
@@ -18,6 +19,9 @@ import PaneContextMenu from './components/PaneContextMenu';
 import ConnectionNodeMenu from './components/ConnectionNodeMenu';
 import FloatingSearch from './components/FloatingSearch';
 import ToastContainer, { type ToastMessage } from './components/Toast';
+import TopBar from './components/TopBar';
+import BottomBar from './components/BottomBar';
+import LoadingOverlay from './components/LoadingOverlay';
 import { useEditorBus } from './bus/useEditorBus';
 import { EditorBusProvider } from './bus/EditorBusContext';
 import { initMods } from './mods/index';
@@ -30,7 +34,7 @@ import { openSearch, closeSearch } from './mods/mod-floating-search';
 import { exportWorkflowData, importWorkflowData } from './mods/mod-workflow-io';
 import { getAllTemplates } from './registry/nodeTemplateRegistry';
 import { createNode } from './utils/nodeFactory';
-import { generateEdgeId } from './utils'; // 新增
+import { generateEdgeId } from './utils';
 import './App.css';
 import { DEBUG } from '../config/debug';
 import type { CustomNode } from './utils/types';
@@ -52,6 +56,9 @@ function AppInner() {
     const [paneMenu, setPaneMenu] = useState<{ x: number; y: number } | null>(null);
     const [connectionMenu, setConnectionMenu] = useState<any>(null);
     const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
+    // 全局加载状态
+    const [loading, setLoading] = useState(false);
+    const [loadingText, setLoadingText] = useState('加载中...');
 
     useEffect(() => {
         const unsub = bus.subscribe(({ event }) => {
@@ -119,18 +126,32 @@ function AppInner() {
         return unsub;
     }, [bus]);
 
+    // 修复：移除 state.nodes, state.edges 依赖，在回调内部实时获取最新值
     useEffect(() => {
-        const unsub = bus.subscribe(({ event }) => {
+        const unsub = bus.subscribe(async ({ event }) => {
             if (event.type === 'TOGGLE_MINIMAP') {
                 setShowMinimap(prev => !prev);
             } else if (event.type === 'SAVE_WORKFLOW') {
-                exportWorkflowData(state.nodes, state.edges);
+                setLoading(true);
+                setLoadingText('正在导出工作流...');
+                try {
+                    const { nodes, edges } = bus.getState();
+                    await exportWorkflowData(nodes, edges);
+                } finally {
+                    setLoading(false);
+                }
             } else if (event.type === 'LOAD_WORKFLOW') {
-                importWorkflowData(bus);
+                setLoading(true);
+                setLoadingText('正在导入工作流...');
+                try {
+                    await importWorkflowData(bus);
+                } finally {
+                    setLoading(false);
+                }
             }
         });
         return unsub;
-    }, [bus, state.nodes, state.edges]);
+    }, [bus]); // 只依赖 bus
 
     const selectedNode = state.nodes.find(n => n.id === state.selection[0]) ?? null;
     const processedNodes = useMemo(() =>
@@ -228,36 +249,41 @@ function AppInner() {
     return (
         <EditorBusProvider value={bus}>
             <div className={`app-container ${state.mode === 'batch-connect' ? 'batch-connect-active' : ''}`}>
-                <Sidebar
-                    collapsed={layout.leftCollapsed}
-                    onToggle={layout.toggleLeft}
-                    addNode={handleAddNodeFromClick}
-                />
-                <FlowCanvas
-                    nodeTypes={nodeTypeMap}
-                    nodes={processedNodes}
-                    edges={state.edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onConnectEnd={onConnectEnd}
-                    onNodeClick={(_, node) => bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: [node.id] })}
-                    onPaneClick={() => bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: [] })}
-                    onNodeContextMenu={handleNodeContextMenu}
-                    onNodeDragStart={handleNodeDragStart}
-                    isValidConnection={isValidConnection}
-                    onReconnectStart={handleReconnectStart}
-                    onReconnect={onReconnect}
-                    onReconnectEnd={handleReconnectEnd}
-                    onPaneContextMenu={handlePaneContext}
-                    onPaneDoubleClick={handlePaneDoubleClick}
-                    showMinimap={showMinimap}
-                    mode={state.mode}
-                    batchConnectState={state.mode === 'batch-connect' ? { sourceNodeIds: state.selection, sourceHandleType: '' } : null}
-                    executeBatchConnect={(targetId, targetHandle) => bus.dispatch({ type: 'BATCH_CONNECT_EXECUTE', targetNodeId: targetId, targetHandleId: targetHandle })}
-                    cancelBatchConnect={() => bus.dispatch({ type: 'BATCH_CONNECT_CANCEL' })}
-                />
-                {rightPanel}
+                <TopBar />
+
+                <div className="main-content">
+                    <Sidebar
+                        collapsed={layout.leftCollapsed}
+                        onToggle={layout.toggleLeft}
+                    />
+                    <FlowCanvas
+                        nodeTypes={nodeTypeMap}
+                        nodes={processedNodes}
+                        edges={state.edges}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        onConnect={onConnect}
+                        onConnectEnd={onConnectEnd}
+                        onNodeClick={(_, node) => bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: [node.id] })}
+                        onPaneClick={() => bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: [] })}
+                        onNodeContextMenu={handleNodeContextMenu}
+                        onNodeDragStart={handleNodeDragStart}
+                        isValidConnection={isValidConnection}
+                        onReconnectStart={handleReconnectStart}
+                        onReconnect={onReconnect}
+                        onReconnectEnd={handleReconnectEnd}
+                        onPaneContextMenu={handlePaneContext}
+                        onPaneDoubleClick={handlePaneDoubleClick}
+                        showMinimap={showMinimap}
+                        mode={state.mode}
+                        batchConnectState={state.mode === 'batch-connect' ? { sourceNodeIds: state.selection, sourceHandleType: '' } : null}
+                        executeBatchConnect={(targetId, targetHandle) => bus.dispatch({ type: 'BATCH_CONNECT_EXECUTE', targetNodeId: targetId, targetHandleId: targetHandle })}
+                        cancelBatchConnect={() => bus.dispatch({ type: 'BATCH_CONNECT_CANCEL' })}
+                    />
+                    {rightPanel}
+                </div>
+
+                <BottomBar />
 
                 {contextMenu && (
                     <ContextMenu
@@ -347,6 +373,7 @@ function AppInner() {
                 )}
 
                 <ToastContainer messages={toastMessages} onClose={removeToast} />
+                <LoadingOverlay visible={loading} text={loadingText} />
             </div>
         </EditorBusProvider>
     );

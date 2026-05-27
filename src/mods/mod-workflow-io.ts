@@ -28,11 +28,6 @@ let _importWorkflowData: (bus: EditorBus) => void | Promise<void> = async (bus) 
 };
 
 // ==================== 对外暴露的替换 API ====================
-/**
- * 替换工作流的导入/导出处理器
- * @param exportHandler 导出函数 (nodes, edges) => void | Promise<void>
- * @param importHandler 导入函数 (bus) => void | Promise<void>
- */
 export function setWorkflowIOHandlers(
   exportHandler: (nodes: any[], edges: any[]) => void | Promise<void>,
   importHandler: (bus: EditorBus) => void | Promise<void>
@@ -43,12 +38,10 @@ export function setWorkflowIOHandlers(
 }
 
 // ==================== 供 App.tsx 调用的包装函数 ====================
-/** 导出工作流（使用当前处理器） */
 export async function exportWorkflowData(nodes: any[], edges: any[]): Promise<void> {
   await _exportWorkflowData(nodes, edges);
 }
 
-/** 导入工作流（使用当前处理器） */
 export async function importWorkflowData(bus: EditorBus): Promise<void> {
   await _importWorkflowData(bus);
 }
@@ -58,14 +51,12 @@ export const modWorkflowIO: EditorMod = {
   id: 'workflow-io',
   init() {
     if (DEBUG) console.log('[mod-workflow-io] 初始化（默认 JSON 处理器）');
-    // 此 Mod 仅提供工具函数和替换机制，不需要订阅事件
     return () => {
       if (DEBUG) console.log('[mod-workflow-io] 已卸载');
     };
   },
 };
 
-// 可选：批量获取工具函数（方便继承者）
 export function getWorkflowIOUtils(bus: EditorBus) {
   return {
     exportWorkflow: (nodes: any[], edges: any[]) => exportWorkflowData(nodes, edges),

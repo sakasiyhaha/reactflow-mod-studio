@@ -1,28 +1,50 @@
 // src/components/NodeLibrary.tsx
 // 节点库组件 —— 左侧面板中的节点列表，支持按分类分组、搜索过滤、点击添加或拖拽到画布
-// 现在使用 getAllTemplates() 动态获取节点模板，支持自定义扩展
+// 自包含：不再依赖外部 addNode 回调
+// 符合高保真方案：搜索框、分类标题、节点按钮样式统一，图标按分类着色
 
 import { useState, useRef } from 'react';
+import { useReactFlow } from '@xyflow/react';
+import { useEditorBusContext } from '../bus/EditorBusContext';
 import { getAllTemplates } from '../registry/nodeTemplateRegistry';
+import { createNode } from '../utils/nodeFactory';
 
-export default function NodeLibrary({ onAddNode, collapsed }: {
-  onAddNode: (type: string) => void;  // 添加节点的回调（由 App.tsx 提供）
-  collapsed: boolean;                // 面板是否折叠
-}) {
+// 根据分类返回对应的图标颜色（符合高保真方案）
+const getCategoryColor = (category: string): string => {
+  switch (category) {
+    case '通用':
+      return '#a0aec0';
+    case '运算':
+      return '#4299e1';
+    case '数据':
+      return '#48bb78';
+    case '常量':
+      return '#ed8936';
+    case '逻辑':
+      return '#9f7aea';
+    case '控制流':
+      return '#f56565';
+    default:
+      return '#a0aec0';
+  }
+};
+
+export default function NodeLibrary() {
   const [searchTerm, setSearchTerm] = useState('');
-  const isDragging = useRef(false);   // 标记是否正在拖拽（防止拖拽时误触发 click 事件）
+  const isDragging = useRef(false);
+  const instance = useReactFlow();
+  const bus = useEditorBusContext();
 
-  // 获取当前所有可用的模板（内置 + 自定义）
   const templates = getAllTemplates();
 
-  // ---------- 按分类分组 ----------
+  // 按分类分组
   const grouped: Record<string, typeof templates> = {};
   templates.forEach((def) => {
     if (!grouped[def.category]) grouped[def.category] = [];
     grouped[def.category].push(def);
   });
 
-  // ---------- 根据搜索词过滤分组 ----------
+  // 过滤
   const filteredGroups: Record<string, typeof templates> = {};
   Object.entries(grouped).forEach(([cat, nodes]) => {
     const filtered = nodes.filter(
@@ -35,80 +57,82 @@ export default function NodeLibrary({ onAddNode, collapsed }: {
     }
   });
 
-  // ---------- 拖拽/点击互斥逻辑 ----------
+  // 清除搜索
+  const clearSearch = () => {
+    setSearchTerm('');
+  };
+
+  // 添加节点（点击时）
+  const handleAddNode = (type: string) => {
+    const center = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const pos = instance.screenToFlowPosition(center);
+    const newNode = createNode(type, pos);
+    bus.dispatch({ type: 'NODE_ADDED', node: newNode });
+  };
+
+  // 拖拽相关
   const handleMouseDown = () => {
-    isDragging.current = false;   // 每次鼠标按下时重置拖拽标记
+    isDragging.current = false;
   };
 
   const handleDragStart = (e: React.DragEvent, type: string) => {
-    isDragging.current = true;    // 标记正在拖拽
+    isDragging.current = true;
     e.dataTransfer.setData('application/reactflow-type', type);
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleClick = (type: string) => {
-    // 如果已经发生了拖拽（dragstart），则忽略本次 click
     if (isDragging.current) {
       isDragging.current = false;
       return;
     }
-    onAddNode(type);
+    handleAddNode(type);
   };
 
-  // 折叠状态：只显示一个图标
-  if (collapsed) {
-    return (
-      <div style={{
-        writingMode: 'vertical-rl', textOrientation: 'mixed',
-        padding: '12px 0', color: 'var(--primary)', fontSize: 14, fontWeight: 'bold'
-      }}>
-        📦
-      </div>
-    );
-  }
-
   return (
-    <>
-      <div className="sidebar-content" style={{ paddingTop: '12px' }}>
-        {/* 搜索框 */}
+    <div className="node-library">
+      <div className="node-library-search-wrapper">
         <input
           type="text"
-          placeholder="🔍 搜索节点..."
+          placeholder="搜索节点（如加法器、开关）"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{
-            width: '100%', padding: '8px 10px', marginBottom: 12,
-            background: 'var(--bg-canvas)', border: '1px solid var(--border)',
-            borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none',
-          }}
+          className="node-library-search"
         />
-
-        {/* 分类和节点列表 */}
+        {searchTerm && (
+          <button className="node-library-search-clear" onClick={clearSearch}>
+            ✕
+          </button>
+        )}
+      </div>
+      <div className="node-library-list">
         {Object.entries(filteredGroups).map(([cat, nodes]) => (
-          <div key={cat}>
-            <div className="category-title">{cat}</div>
-            {nodes.map((def) => (
-              <button
-                key={def.type}
-                draggable
-                onMouseDown={handleMouseDown}
-                onDragStart={(e) => handleDragStart(e, def.type)}
-                onClick={() => handleClick(def.type)}
-              >
-                {def.icon ?? '📦'} {def.title}
-              </button>
-            ))}
+          <div key={cat} className="node-library-category">
+            <div className="node-library-category-title">{cat}</div>
+            {nodes.map((def) => {
+              const iconColor = getCategoryColor(def.category);
+              return (
+                <button
+                  key={def.type}
+                  draggable
+                  onMouseDown={handleMouseDown}
+                  onDragStart={(e) => handleDragStart(e, def.type)}
+                  onClick={() => handleClick(def.type)}
+                  className="node-library-item"
+                >
+                  <span className="node-library-item-icon" style={{ color: iconColor }}>
+                    {def.icon ?? '📦'}
+                  </span>
+                  <span className="node-library-item-label">{def.title}</span>
+                </button>
+              );
+            })}
           </div>
         ))}
         {Object.keys(filteredGroups).length === 0 && (
-          <p style={{ color: 'var(--text-secondary)', fontSize: 12, textAlign: 'center' }}>
-            没有匹配的节点
-          </p>
+          <p className="node-library-empty">没有匹配的节点</p>
         )}
       </div>
-      <div className="sidebar-footer">
-        <h3>📦 节点库</h3>
-      </div>
-    </>
+    </div>
   );
 }

@@ -1,131 +1,49 @@
 // src/components/PropsPanel.tsx
-// 属性面板 —— 右侧面板，支持动态扩展槽（顶部/底部）
-// 增加调试日志以追踪节点数据同步
+// 属性面板 —— 右侧面板，支持动态注册整个面板组件（替换默认编辑器）
+// 符合高保真方案：面板标题、属性编辑区、隐藏调试信息
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React from 'react';
 import CollapseButton from './CollapseButton';
-import { DEBUG } from '../../config/debug';
-import { getAllTemplates } from '../registry/nodeTemplateRegistry';
-import { getPropsPanelExtensions } from '../registry/propsPanelRegistry';
+import { getPropsPanelComponents } from '../registry/propsPanelRegistry';
 import { useEditorBusContext } from '../bus/EditorBusContext';
 import type { CustomNode } from '../utils/types';
 
-interface PropertyItemConfig { type: string; default: unknown; }
-
 interface PropsPanelProps {
-    collapsed: boolean;
-    onToggle: () => void;
-    selectedNode: CustomNode | null;
-    updateNodeData: (id: string, data: Record<string, unknown>) => void;
+  collapsed: boolean;
+  onToggle: () => void;
+  selectedNode: CustomNode | null;
+  updateNodeData: (id: string, data: Record<string, unknown>) => void;
 }
 
 export default function PropsPanel({ collapsed, onToggle, selectedNode, updateNodeData }: PropsPanelProps) {
-    const bus = useEditorBusContext();
-    const [localData, setLocalData] = useState<Record<string, unknown>>(selectedNode?.data ?? {});
+  const bus = useEditorBusContext();
+  const panelComponents = getPropsPanelComponents();
 
-    // 监听 selectedNode 变化，同步本地编辑数据
-    useEffect(() => {
-        if (DEBUG) {
-            console.log('[PropsPanel] 🟢 selectedNode 变化:', selectedNode?.id, selectedNode?.data);
-        }
-        if (selectedNode) {
-            setLocalData(selectedNode.data);
-        } else {
-            setLocalData({});
-        }
-    }, [selectedNode]);
-
-    const propertyConfig = useMemo((): Record<string, PropertyItemConfig> => {
-        if (!selectedNode) return {};
-        const template = getAllTemplates().find(t => t.type === selectedNode.type);
-        return (template?.properties ?? {}) as Record<string, PropertyItemConfig>;
-    }, [selectedNode]);
-
-    const handleChange = useCallback((key: string, e: React.ChangeEvent<HTMLInputElement>) => {
-        const raw = e.target.value;
-        const config = propertyConfig[key] ?? { type: 'string', default: '' };
-        let newValue: unknown = raw;
-        if (config.type === 'number') {
-            newValue = raw === '' ? 0 : Number(raw);
-            if (isNaN(newValue as number)) newValue = (config.default as number) ?? 0;
-        }
-        setLocalData((prev) => ({ ...prev, [key]: newValue }));
-        if (DEBUG) {
-            console.log(`[PropsPanel] ✏️ 属性编辑: key=${key}, newValue=${newValue}`);
-        }
-    }, [propertyConfig]);
-
-    const commitUpdate = useCallback(() => {
-        if (selectedNode) {
-            if (DEBUG) {
-                console.log(`[PropsPanel] 💾 提交节点数据更新: ${selectedNode.id}`, localData);
-            }
-            updateNodeData(selectedNode.id, localData);
-        }
-    }, [selectedNode, localData, updateNodeData]);
-
-    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') commitUpdate();
-    }, [commitUpdate]);
-
-    const propertyKeys = Object.keys(propertyConfig);
-
-    // 获取顶部和底部的动态扩展组件
-    const topExtensions = getPropsPanelExtensions('top', selectedNode);
-    const bottomExtensions = getPropsPanelExtensions('bottom', selectedNode);
-
+  // 如果没有注册任何面板组件，显示空状态
+  if (panelComponents.length === 0) {
     return (
-        <div className={`props-panel${collapsed ? ' collapsed' : ''}`}>
-            <CollapseButton side="right" collapsed={collapsed} onClick={onToggle} />
-            {!collapsed && (
-                <>
-                    <div className="props-content">
-                        {/* 顶部扩展槽 */}
-                        {topExtensions.map(ext => {
-                            const ExtensionComponent = ext.component;
-                            return <ExtensionComponent key={ext.id} selectedNode={selectedNode} bus={bus} />;
-                        })}
-
-                        {selectedNode ? (
-                            <div>
-                                <div className="prop-info">
-                                    <strong>类型：</strong>{selectedNode.type}<br />
-                                    <strong>ID：</strong>{selectedNode.id}
-                                </div>
-                                {propertyKeys.length > 0 ? (
-                                    propertyKeys.map((key) => (
-                                        <div key={key} className="prop-row">
-                                            <label>{key}</label>
-                                            <input
-                                                value={String(localData[key] ?? '')}
-                                                onChange={(e) => handleChange(key, e)}
-                                                onBlur={commitUpdate}
-                                                onKeyDown={handleKeyDown}
-                                            />
-                                            {DEBUG && (
-                                                <span style={{ fontSize: 10, color: 'gray', marginLeft: 8 }}>
-                                                    (localData[{key}] = {String(localData[key])})
-                                                </span>
-                                            )}
-                                        </div>
-                                    ))
-                                ) : (
-                                    <p className="prop-tip">此节点类型无可用属性</p>
-                                )}
-                            </div>
-                        ) : (
-                            <p className="prop-tip">点击画布上的节点以查看属性</p>
-                        )}
-
-                        {/* 底部扩展槽 */}
-                        {bottomExtensions.map(ext => {
-                            const ExtensionComponent = ext.component;
-                            return <ExtensionComponent key={ext.id} selectedNode={selectedNode} bus={bus} />;
-                        })}
-                    </div>
-                    <div className="props-footer"><h3>📋 属性</h3></div>
-                </>
-            )}
-        </div>
+      <div className={`props-panel${collapsed ? ' collapsed' : ''} glass-effect`}>
+        <CollapseButton side="right" collapsed={collapsed} onClick={onToggle} />
+        {!collapsed && (
+          <div className="props-content">
+            <p className="prop-tip">未注册属性面板组件</p>
+          </div>
+        )}
+      </div>
     );
+  }
+
+  // 渲染第一个注册的面板组件（通常只有一个，按 order 排序后取第一个）
+  const PrimaryPanel = panelComponents[0].component;
+
+  return (
+    <div className={`props-panel${collapsed ? ' collapsed' : ''} glass-effect`}>
+      <CollapseButton side="right" collapsed={collapsed} onClick={onToggle} />
+      {!collapsed && (
+        <div className="props-content">
+          <PrimaryPanel selectedNode={selectedNode} bus={bus} />
+        </div>
+      )}
+    </div>
+  );
 }

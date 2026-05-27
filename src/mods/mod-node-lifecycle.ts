@@ -1,33 +1,23 @@
 // src/mods/mod-node-lifecycle.ts
-// 节点生命周期适配器 Mod
-// 将 React Flow 的 onNodesChange / onEdgesChange / onConnect / onReconnect 等回调适配为 EditorEvent
-// 支持继承：暴露工具函数 createOnNodesChange, createOnEdgesChange, createOnConnect, createOnReconnect
-
 import type { EditorMod, EditorBus } from '../bus/types';
 import { applyNodeChanges } from '@xyflow/react';
 import { DEBUG } from '../../config/debug';
 import { generateEdgeId } from '../utils';
-// ==================== 工具函数（可被继承复用） ====================
 
-/**
- * 创建 onNodesChange 回调
- * 处理节点变化（位置、删除、选中），派发相应事件
- */
+// ==================== 工具函数 ====================
+
 export function createOnNodesChange(bus: EditorBus) {
   return (changes: any[]) => {
     const currentNodes = bus.getState().nodes;
     const newNodes = applyNodeChanges(changes, currentNodes);
 
-    // 提取删除的节点 ID
     const removedIds = changes
       .filter((c: any) => c.type === 'remove')
       .map((c: any) => c.id);
-    // 提取位置最终更新（拖拽结束）
     const positionUpdates = changes
       .filter((c: any) => c.type === 'position' && c.dragging !== true)
       .map((c: any) => ({ id: c.id, position: c.position }));
 
-    // 同步节点数组
     bus.dispatch({ type: 'APPLY_NODE_CHANGES', nodes: newNodes });
 
     if (removedIds.length > 0) {
@@ -40,7 +30,6 @@ export function createOnNodesChange(bus: EditorBus) {
       if (DEBUG) console.log('[node-lifecycle] 最终位置更新:', positionUpdates.length);
     }
 
-    // 处理选中状态变化
     const newSelectedIds = newNodes.filter((n: any) => n.selected).map((n: any) => n.id);
     const oldSelectedIds = currentNodes.filter((n: any) => n.selected).map((n: any) => n.id);
     const selectionChanged =
@@ -55,10 +44,6 @@ export function createOnNodesChange(bus: EditorBus) {
   };
 }
 
-/**
- * 创建 onEdgesChange 回调
- * 处理边直接删除（如按 Delete 键）
- */
 export function createOnEdgesChange(bus: EditorBus) {
   return (changes: any[]) => {
     const removedEdgeIds = changes.filter((c: any) => c.type === 'remove').map((c: any) => c.id);
@@ -66,10 +51,6 @@ export function createOnEdgesChange(bus: EditorBus) {
   };
 }
 
-/**
- * 创建 onConnect 回调（新建连接）
- * 为边生成唯一 ID 并派发添加事件
- */
 export function createOnConnect(bus: EditorBus) {
   return (connection: any) => {
     bus.dispatch({
@@ -77,22 +58,27 @@ export function createOnConnect(bus: EditorBus) {
       edge: {
         ...connection,
         id: generateEdgeId(),
+        type: 'gradient',
       },
     });
   };
 }
 
-/**
- * 创建 onReconnect 回调（重连已有边）
- */
 export function createOnReconnect(bus: EditorBus) {
   return (oldEdge: any, newConnection: any) => {
-    if (newConnection) {
+    // 只有当 newConnection 存在且有效时才派发重连事件
+    if (newConnection && newConnection.source && newConnection.target) {
       bus.dispatch({
         type: 'EDGE_RECONNECTED',
         oldEdgeId: oldEdge.id,
-        newConnection,
+        newConnection: {
+          ...newConnection,
+          type: 'gradient',   // 新边使用渐变样式
+        },
       });
+      if (DEBUG) console.log('[node-lifecycle] 重连边', oldEdge.id, '->', newConnection);
+    } else {
+      if (DEBUG) console.warn('[node-lifecycle] 重连无效，忽略', newConnection);
     }
   };
 }
@@ -103,14 +89,12 @@ export const modNodeLifecycle: EditorMod = {
   id: 'node-lifecycle',
   init(bus: EditorBus) {
     if (DEBUG) console.log('[mod-node-lifecycle] 初始化');
-    // 此 Mod 不需要持久订阅，仅作为工具函数容器
     return () => {
       if (DEBUG) console.log('[mod-node-lifecycle] 已卸载');
     };
   },
 };
 
-// 可选：提供统一的获取适配器集合的函数（方便继承者批量获取）
 export function getNodeLifecycleAdapters(bus: EditorBus) {
   return {
     onNodesChange: createOnNodesChange(bus),

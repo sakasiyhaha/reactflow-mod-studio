@@ -46,7 +46,7 @@ export type EditorEvent =
   | { type: 'HISTORY_REDO' }                                          // 执行重做
 
   // ---------- 工作流整体 ----------
-  | { type: 'WORKFLOW_LOADED'; nodes: CustomNode[]; edges: CustomEdge[] } // 加载 / 重置整个工作流
+  | { type: 'WORKFLOW_LOADED'; nodes: CustomNode[]; edges: CustomEdge[]; fromHistory?: boolean } // 加载 / 重置整个工作流
 
   // ---------- 批量连线 ----------
   | { type: 'BATCH_CONNECT_START'; sourceNodeIds: string[]; sourceHandleType: string }   // 开始批量连线，记录源节点和端口类型
@@ -66,7 +66,8 @@ export type EditorEvent =
   | { type: 'ALIGN_CENTER_Y' }
   | { type: 'DISTRIBUTE_HORIZONTAL' }
   | { type: 'DISTRIBUTE_VERTICAL' }
-  | { type: 'AUTO_LAYOUT' }
+  | { type: 'AUTO_LAYOUT'; options?: { horizontalSpacing?: number; verticalSpacing?: number; startX?: number; startY?: number } }
+  | { type: 'FIT_VIEW'; options?: { padding?: number; duration?: number } }
     // ---------- 对齐辅助线 ----------
   | { type: 'RENDER_GUIDE_LINES'; payload: { lines: Array<{ x1: number; y1: number; x2: number; y2: number; color?: string }> } }
   | { type: 'CLEAR_GUIDE_LINES' }
@@ -105,7 +106,12 @@ export type EditorEvent =
   | { type: 'ERROR_OCCURRED'; error: { message: string; type?: 'info' | 'warning' | 'error'; details?: any } }
   // ---------- 浮动搜索 ----------
   | { type: 'FLOATING_SEARCH_OPEN'; payload: { x: number; y: number } }
-  | { type: 'FLOATING_SEARCH_CLOSE' };
+  | { type: 'FLOATING_SEARCH_CLOSE' }
+  | { type: 'UPDATE_STATUS'; payload: { id: string; text: string } }
+  | { type: 'SET_TOOLBAR_ENABLED'; payload: { buttonId: string; enabled: boolean } }
+  | { type: 'LOADING_START'; payload?: { text?: string } }
+  | { type: 'LOADING_END' };
+  ;
 
 // ==================== 编辑器核心状态 ====================
 /** 编辑器的完整状态快照 */

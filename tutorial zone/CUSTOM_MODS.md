@@ -82,7 +82,7 @@ export interface EditorMod {
 | `SELECTION_CHANGED` | 选中变化 | 更新属性面板 |
 | `WORKFLOW_LOADED` | 加载/重置工作流 | 重置历史、同步外部存储 |
 | `HISTORY_UNDO` / `HISTORY_REDO` | 撤销/重做 | 自定义撤销行为 |
-| `AUTO_LAYOUT` | 自动布局 | 触发自定义布局算法 |
+| `AUTO_LAYOUT` | 自动布局 | 触发自定义布局算法（支持传参） |
 | `ALIGN_LEFT` / `ALIGN_RIGHT` … | 对齐操作 | 自定义对齐规则 |
 | `BATCH_CONNECT_START` / `EXECUTE` / `CANCEL` | 批量连线 | 扩展批量连线逻辑 |
 | `RECONNECT_START` / `END` | 重连开始/结束 | 抑制连接菜单 |
@@ -238,7 +238,7 @@ bus.dispatch({
 
 ## UI 扩展注册中心
 
-以下注册中心允许 Mod 动态扩展界面，无需修改核心组件。
+以下注册中心允许 Mod 动态扩展界面，无需修改核心组件。**所有注册函数均返回一个清理函数，在 Mod 卸载时调用可移除注册项**。
 
 ### 1. 项目设置面板配置项
 
@@ -247,7 +247,7 @@ bus.dispatch({
 ```typescript
 import { registerProjectConfigField } from '../src/registry/projectConfigRegistry';
 
-registerProjectConfigField({
+const unregister = registerProjectConfigField({
   key: 'modId',
   label: '模组 ID',
   type: 'string',
@@ -255,18 +255,29 @@ registerProjectConfigField({
   validate: (val) => /^[a-z][a-z0-9_]*$/.test(val),
   order: 10,
 });
+
+// 在 Mod 清理时调用
+unregister();
 ```
 
 支持的类型：`'string'`, `'number'`, `'boolean'`, `'color'`, `'select'`。
 
-### 2. 侧边栏按钮
+### 2. 侧边栏组件和按钮
 
 使用 `src/registry/sidebarRegistry.ts`：
 
 ```typescript
-import { registerSidebarButton } from '../src/registry/sidebarRegistry';
+import { registerSidebarComponent, registerSidebarButton } from '../src/registry/sidebarRegistry';
 
-registerSidebarButton({
+// 注册组件区块
+const unregisterComp = registerSidebarComponent({
+  id: 'my-widget',
+  order: 20,
+  component: MyWidget,
+});
+
+// 注册按钮
+const unregisterBtn = registerSidebarButton({
   id: 'export-image',
   label: '📸 导出图片',
   onClick: (bus) => {
@@ -274,6 +285,10 @@ registerSidebarButton({
   },
   order: 10,
 });
+
+// 清理时调用
+unregisterComp();
+unregisterBtn();
 ```
 
 ### 3. 右键菜单项
@@ -284,7 +299,7 @@ registerSidebarButton({
 import { registerNodeMenuItem, registerPaneMenuItem } from '../src/registry/contextMenuRegistry';
 
 // 节点右键菜单
-registerNodeMenuItem({
+const unregisterNode = registerNodeMenuItem({
   id: 'log-node',
   label: '📋 输出节点信息',
   action: (bus, nodeId) => {
@@ -294,13 +309,16 @@ registerNodeMenuItem({
 });
 
 // 画布右键菜单
-registerPaneMenuItem({
+const unregisterPane = registerPaneMenuItem({
   id: 'clear-canvas',
   label: '🧹 清空画布',
   action: (bus) => {
     bus.dispatch({ type: 'NODE_DELETED', nodeIds: bus.getState().nodes.map(n => n.id) });
   },
 });
+
+unregisterNode();
+unregisterPane();
 ```
 
 ### 4. 属性面板扩展槽
@@ -316,7 +334,7 @@ const MyExtension = ({ selectedNode, bus }) => {
   return <div>当前节点类型: {selectedNode.type}</div>;
 };
 
-registerPropsPanelExtension({
+const unregister = registerPropsPanelExtension({
   id: 'my-extension',
   slot: 'top',   // 或 'bottom'
   component: MyExtension,
@@ -331,7 +349,7 @@ registerPropsPanelExtension({
 ```typescript
 import { registerSearchFilter } from '../src/utils/searchExtensions';
 
-registerSearchFilter((templates, query) => {
+const unregister = registerSearchFilter((templates, query) => {
   // 将“最近使用”的节点置顶（示例）
   if (!query.trim()) {
     const recent = ['numberInput', 'adder'];
@@ -341,6 +359,9 @@ registerSearchFilter((templates, query) => {
   }
   return templates;
 });
+
+// 清理
+unregister();
 ```
 
 ### 6. 边类型注册中心
@@ -376,6 +397,21 @@ registerControlType('color-picker', ColorPicker);
 ```
 
 然后在节点模板的 `inlineControls` 中使用 `type: 'color-picker'`。
+
+### 8. 顶部栏和底部栏
+
+顶部栏 (`topBarRegistry`) 和底部栏 (`bottomBarRegistry`) 的注册方式类似，均返回清理函数。例如：
+
+```typescript
+import { registerTopBarCenter } from '../src/registry/topBarRegistry';
+
+const unregister = registerTopBarCenter({
+  id: 'my-button',
+  order: 100,
+  icon: <MyIcon />,
+  onClick: () => console.log('clicked'),
+});
+```
 
 ---
 
@@ -491,5 +527,7 @@ export const saveShortcutMod: EditorMod = {
 - Mod 可以添加新功能、覆盖内置功能、或继承并增强。
 - 利用事件总线进行通信，利用注册中心扩展 UI 和节点模板。
 - 防御降级机制保证即使 Mod 出错，编辑器也能正常工作。
+- 所有注册中心均提供清理函数，便于 Mod 卸载时释放资源。
 
 更多 API 细节请参考 `AI_MOD_API_REFERENCE.md`，节点模板定义请参考 `NODE_TEMPLATE_API.md`。
+```

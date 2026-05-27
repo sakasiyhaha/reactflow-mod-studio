@@ -132,7 +132,7 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
     // 加载工作流：替换所有节点和边，清空选中和模式，并同步 ID 计数器
     case 'WORKFLOW_LOADED': {
       if (DEBUG) console.log(`[Bus] WORKFLOW_LOADED`);
-      syncIdCounter(event.nodes); // 关键修复
+      syncIdCounter(event.nodes);
       return {
         ...state,
         nodes: event.nodes,
@@ -147,7 +147,7 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
       return { ...state, nodes: event.nodes };
     }
 
-    // 以下事件不直接修改状态
+    // 以下事件不直接修改状态（仅用于副作用）
     case 'HISTORY_UNDO':
     case 'HISTORY_REDO':
     case 'BATCH_CONNECT_START':
@@ -155,6 +155,28 @@ function editorReducer(state: EditorState, event: EditorEvent): EditorState {
     case 'BATCH_CONNECT_CANCEL':
     case 'RECONNECT_START':
     case 'RECONNECT_END':
+    case 'UPDATE_STATUS':        // 动态更新状态栏文本
+    case 'SET_TOOLBAR_ENABLED':  // 设置工具栏按钮启用状态
+    case 'VIEWPORT_CHANGED':     // 画布视图变化（缩放/平移）
+    case 'RENDER_GUIDE_LINES':   // 渲染辅助线
+    case 'CLEAR_GUIDE_LINES':    // 清除辅助线
+    case 'SET_VIEWPORT_LIMITS':  // 设置视口限制
+    case 'SET_PAN_ON_DRAG':      // 设置拖拽平移按键
+    case 'SET_BACKGROUND_STYLE': // 设置背景样式
+    case 'SET_THEME_COLOR':      // 设置主题颜色
+    case 'SET_THEME_COLORS':     // 批量设置主题颜色
+    case 'PROJECT_CONFIG_TOGGLE_PANEL':
+    case 'PROJECT_CONFIG_CHANGED':
+    case 'TOGGLE_MINIMAP':
+    case 'SAVE_WORKFLOW':
+    case 'LOAD_WORKFLOW':
+    case 'ERROR_OCCURRED':
+    case 'FLOATING_SEARCH_OPEN':
+    case 'FLOATING_SEARCH_CLOSE':
+    case 'CONNECTION_MENU_OPEN':
+    case 'CONNECTION_MENU_CLOSE':
+    case 'SET_LEFT_COLLAPSED':
+    case 'SET_RIGHT_COLLAPSED':
       return state;
 
     default:

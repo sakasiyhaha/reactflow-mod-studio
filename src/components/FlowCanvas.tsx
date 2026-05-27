@@ -84,7 +84,7 @@ export default function FlowCanvas({
   executeBatchConnect,
   cancelBatchConnect,
 }: FlowCanvasProps) {
-  const { screenToFlowPosition, getIntersectingNodes } = useReactFlow();
+  const { screenToFlowPosition, getIntersectingNodes, fitView } = useReactFlow();
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const bus = useEditorBusContext();
 
@@ -103,7 +103,7 @@ export default function FlowCanvas({
   const [guideLines, setGuideLines] = useState<Array<{ x1: number; y1: number; x2: number; y2: number; color?: string }>>([]);
   const viewportRef = useRef({ x: 0, y: 0, zoom: 1 });
 
-  // 监听动态视图控制事件 + 辅助线事件
+  // 监听动态视图控制事件 + 辅助线事件 + FIT_VIEW
   useEffect(() => {
     const unsub = bus.subscribe(({ event }) => {
       switch (event.type) {
@@ -140,10 +140,13 @@ export default function FlowCanvas({
         case 'CLEAR_GUIDE_LINES':
           setGuideLines([]);
           break;
+        case 'FIT_VIEW':
+          fitView({ padding: event.options?.padding ?? 0.2, duration: event.options?.duration ?? 200 });
+          break;
       }
     });
     return unsub;
-  }, [bus]);
+  }, [bus, fitView]);
 
   // 右键菜单处理
   useEffect(() => {
@@ -185,7 +188,7 @@ export default function FlowCanvas({
     return () => container.removeEventListener('contextmenu', handleContextMenu);
   }, [screenToFlowPosition, getIntersectingNodes, nodes, onNodeContextMenu, onPaneContextMenu]);
 
-  // 拖放节点（动态偏移）
+  // 拖放节点
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -198,21 +201,12 @@ export default function FlowCanvas({
       if (!type) return;
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       const defaultData = getNodeDefaultConfig(type);
-      // 获取模板默认尺寸
-      const template = getAllTemplates().find(t => t.type === type);
-      const defaultWidth = template?.defaultWidth ?? DEFAULT_NODE_WIDTH;
-      const defaultHeight = template?.defaultHeight ?? DEFAULT_NODE_HEIGHT;
-      // 节点中心对齐鼠标位置
-      const nodePosition = {
-        x: position.x - defaultWidth / 2,
-        y: position.y - defaultHeight / 2,
-      };
       bus.dispatch({
         type: 'NODE_ADDED',
         node: {
           id: generateNodeId(),
           type,
-          position: nodePosition,
+          position,
           data: { _nodeType: type, ...defaultData },
         },
       });
@@ -319,7 +313,7 @@ export default function FlowCanvas({
         onDragOver={onDragOver}
         onDrop={onDrop}
         isValidConnection={isValidConnection}
-        reconnectRadius={25}
+        reconnectRadius={50}   // 增加重连捕捉半径，从 25 改为 50
         edgesReconnectable
         onReconnectStart={onReconnectStart}
         onReconnect={onReconnect}
@@ -343,20 +337,68 @@ export default function FlowCanvas({
         onDoubleClick={handleDoubleClick}
         onMove={handleMove}
       >
+        {/* 隐藏的 SVG 渐变定义（用于自定义连接线） */}
+        <svg style={{ position: 'absolute', width: 0, height: 0, pointerEvents: 'none' }}>
+          <defs>
+            <linearGradient id="edgeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#34d399" />
+              <stop offset="100%" stopColor="#f472b6" />
+            </linearGradient>
+          </defs>
+        </svg>
+
+        {/* 双网格：基础网格（20px） + 主网格（100px） */}
+        <Background
+          variant={BackgroundVariant.Lines}
+          gap={20}
+          size={1}
+          color="var(--grid-line-base)"
+          style={{ opacity: 0.7 }}
+        />
+        <Background
+          variant={BackgroundVariant.Lines}
+          gap={100}
+          size={1}
+          color="var(--grid-line-major)"
+          style={{ opacity: 1 }}
+        />
+
+        {/* 控制按钮组 */}
         <Controls showZoom showFitView showInteractive={false} />
-        {showBackground && (
-          <Background variant={bgVariant} gap={bgGap} size={bgSize} color={bgColor} />
-        )}
+
+        {/* 坐标轴（可选） */}
         <CoordinateAxes />
+
+        {/* 迷你地图（固定在右下角） */}
         {showMinimap && (
           <MiniMap
             nodeStrokeColor="var(--primary)"
             nodeColor="var(--bg-card)"
             nodeBorderRadius={4}
-            style={{ width: 180, height: 120 }}
-            maskColor="rgba(245, 249, 255, 0.6)"
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              right: 12,
+              width: 160,
+              height: 120,
+              backgroundColor: '#1e1e1e',
+              border: '1px solid #333',
+              borderRadius: 4,
+            }}
+            maskColor="rgba(0,0,0,0.6)"
           />
         )}
+
+        {/* 居中画布按钮 */}
+        <button
+          onClick={() => fitView({ padding: 0.2 })}
+          className="canvas-center-btn"
+          title="居中画布"
+        >
+          🏠
+        </button>
+
+        {/* 辅助线图层 */}
         {guideLines.length > 0 && (
           <svg
             style={{
@@ -385,29 +427,16 @@ export default function FlowCanvas({
         )}
       </ReactFlow>
 
+      {/* 批量连线提示 */}
       {batchConnectState && (
         <div className="batch-connect-hint">
           🔗 已选择 {batchConnectState.sourceNodeIds.length} 个源节点，请点击目标节点的输入端口 · 右键或 Esc 取消
         </div>
       )}
 
+      {/* 空状态提示 */}
       {nodes.length === 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            color: 'var(--text-secondary)',
-            fontSize: 18,
-            pointerEvents: 'none',
-            textAlign: 'center',
-            background: 'rgba(255,255,255,0.8)',
-            padding: '16px 32px',
-            borderRadius: 8,
-            border: '1px dashed var(--border)',
-          }}
-        >
+        <div className="canvas-empty-state">
           ✨ 拖拽左侧节点或点击添加，开始构建流程
         </div>
       )}

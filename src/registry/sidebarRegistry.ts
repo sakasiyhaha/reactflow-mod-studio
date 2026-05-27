@@ -1,47 +1,107 @@
 // src/registry/sidebarRegistry.ts
-// 侧边栏按钮注册中心
-// 允许 Mod 动态添加自定义按钮
-
+import type { ComponentType } from 'react';
 import type { EditorBus } from '../bus/types';
 
-/**
- * 侧边栏按钮定义
- */
-export interface SidebarButton {
-  id: string;                    // 唯一标识
-  label: string;                 // 按钮文字
-  icon?: string;                 // 可选图标（emoji 或图片）
-  onClick: (bus: EditorBus) => void | Promise<void>; // 点击回调
-  order?: number;                // 显示顺序（越小越靠前，默认 100）
+export interface SidebarComponent {
+  id: string;
+  order: number;
+  component: ComponentType;
 }
 
-// 存储所有注册的按钮
+export interface SidebarButton {
+  id: string;
+  label: string;
+  icon?: string;
+  onClick: (bus: EditorBus) => void | Promise<void>;
+  order?: number;
+}
+
+let registeredComponents: SidebarComponent[] = [];
 let registeredButtons: SidebarButton[] = [];
 
-/**
- * 注册侧边栏按钮
- * @param button 按钮定义
- */
-export function registerSidebarButton(button: SidebarButton): void {
-  if (registeredButtons.some(b => b.id === button.id)) {
-    console.warn(`[sidebarRegistry] 按钮 "${button.id}" 已存在，将被覆盖`);
-  }
-  registeredButtons = [...registeredButtons.filter(b => b.id !== button.id), button];
-  registeredButtons.sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
-  console.log(`[sidebarRegistry] 已注册侧边栏按钮: ${button.id} (${button.label})`);
+function sortByOrder<T extends { order?: number }>(items: T[]): T[] {
+  return [...items].sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
 }
 
-/**
- * 获取所有已注册的按钮
- */
+// 保存排序到 localStorage（略，保持原有逻辑）
+
+export function registerSidebarComponent(component: SidebarComponent): () => void {
+  const index = registeredComponents.findIndex(c => c.id === component.id);
+  if (index !== -1) registeredComponents[index] = component;
+  else registeredComponents.push(component);
+  registeredComponents = sortByOrder(registeredComponents);
+  saveOrderToLocalStorage();
+  console.log(`[sidebarRegistry] 已注册组件: ${component.id}`);
+
+  // 返回 unregister 函数
+  return () => {
+    const idx = registeredComponents.findIndex(c => c.id === component.id);
+    if (idx !== -1) {
+      registeredComponents.splice(idx, 1);
+      console.log(`[sidebarRegistry] 已卸载组件: ${component.id}`);
+    }
+  };
+}
+
+export function registerSidebarButton(button: SidebarButton): () => void {
+  const index = registeredButtons.findIndex(b => b.id === button.id);
+  if (index !== -1) registeredButtons[index] = button;
+  else registeredButtons.push(button);
+  registeredButtons = sortByOrder(registeredButtons);
+  console.log(`[sidebarRegistry] 已注册按钮: ${button.id}`);
+
+  return () => {
+    const idx = registeredButtons.findIndex(b => b.id === button.id);
+    if (idx !== -1) {
+      registeredButtons.splice(idx, 1);
+      console.log(`[sidebarRegistry] 已卸载按钮: ${button.id}`);
+    }
+  };
+}
+
+export function getSidebarComponents(): SidebarComponent[] {
+  return [...registeredComponents];
+}
+
 export function getSidebarButtons(): SidebarButton[] {
   return [...registeredButtons];
 }
 
-/**
- * 移除按钮（通常不需要，但提供清理能力）
- */
-export function unregisterSidebarButton(id: string): void {
-  registeredButtons = registeredButtons.filter(b => b.id !== id);
-  console.log(`[sidebarRegistry] 已移除侧边栏按钮: ${id}`);
+export function clearSidebarRegistry(): void {
+  registeredComponents = [];
+  registeredButtons = [];
+}
+
+export function updateComponentOrder(id: string, newOrder: number): void {
+  const component = registeredComponents.find(c => c.id === id);
+  if (component) {
+    component.order = newOrder;
+    registeredComponents = sortByOrder(registeredComponents);
+    saveOrderToLocalStorage();
+    console.log(`[sidebarRegistry] 组件 ${id} 顺序更新为 ${newOrder}`);
+  }
+}
+
+const STORAGE_KEY = 'sidebar_components_order';
+
+function saveOrderToLocalStorage(): void {
+  const orderMap = registeredComponents.map(c => ({ id: c.id, order: c.order }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(orderMap));
+}
+
+export function loadOrderFromLocalStorage(): void {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try {
+      const orderMap = JSON.parse(raw) as { id: string; order: number }[];
+      for (const { id, order } of orderMap) {
+        const comp = registeredComponents.find(c => c.id === id);
+        if (comp) comp.order = order;
+      }
+      registeredComponents = sortByOrder(registeredComponents);
+      console.log('[sidebarRegistry] 已加载组件顺序');
+    } catch (e) {
+      console.warn('[sidebarRegistry] 加载顺序失败', e);
+    }
+  }
 }

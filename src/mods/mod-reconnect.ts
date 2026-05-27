@@ -1,6 +1,4 @@
 // src/mods/mod-reconnect.ts
-// 重连 Mod - 添加详细日志用于调试
-
 import type { EditorMod, EditorBus } from '../bus/types';
 import { getAllTemplates } from '../registry/nodeTemplateRegistry';
 import { isValidConnectionType } from '../utils/connectionRules';
@@ -18,7 +16,6 @@ interface ReconnectState {
 }
 
 let reconnectState: ReconnectState | null = null;
-let suppressCount = 0;
 
 // ==================== 辅助函数 ====================
 function getPortType(
@@ -36,6 +33,11 @@ function getPortType(
     : (template.handles?.targets ?? template.inputs ?? []);
   const port = ports.find(p => p.id === handleId);
   return port?.type ?? null;
+}
+
+// 导出重连状态检查函数，供 connection-menu 使用
+export function isReconnecting(): boolean {
+  return reconnectState !== null;
 }
 
 // ==================== Mod 定义 ====================
@@ -58,42 +60,26 @@ export const modReconnect: EditorMod = {
             targetHandle: edge.targetHandle ?? '',
             handleType: event.handleType,
           };
-          // 开始重连，设置极大抑制计数
-          suppressCount = 999;
-          console.log(`%c[mod-reconnect] RECONNECT_START 边=${event.edgeId} 类型=${event.handleType} suppressCount=${suppressCount}`, 'color: #f59e0b; font-weight: bold');
+          console.log(`%c[mod-reconnect] 开始重连边 ${event.edgeId}，操作端=${event.handleType}`, 'color: #f59e0b; font-weight: bold');
+          break;
+        }
+
+        case 'EDGE_RECONNECTED': {
+          if (reconnectState && event.oldEdgeId === reconnectState.edgeId) {
+            console.log(`%c[mod-reconnect] 重连成功，清除状态`, 'color: #22c55e; font-weight: bold');
+            reconnectState = null;
+          }
           break;
         }
 
         case 'RECONNECT_END': {
           if (!reconnectState) {
-            console.warn(`[mod-reconnect] RECONNECT_END 但没有重连状态，忽略`);
+            // 没有重连状态，可能是已经成功重连并清除了，忽略
             return;
           }
-          console.log(`%c[mod-reconnect] RECONNECT_END 边=${reconnectState.edgeId} 当前suppressCount=${suppressCount}`, 'color: #e67e22; font-weight: bold');
-          
-          // 关键：释放到空白时需要删除边？由外部处理？原来的逻辑是在 RECONNECT_END 中直接删除边
-          // 但是我们需要知道拖拽释放后是否有新的连接（newConnection）。这里的事件没有携带 newConnection 信息。
-          // React Flow 的 onReconnectEnd 回调并不提供 newConnection，只有 onReconnect（成功时）才提供。
-          // 因此，我们只能在 RECONNECT_START 时假设边可能被删除，而真正的删除应该发生在 onReconnect 未调用时。
-          // 简单做法：在 RECONNECT_END 中直接删除原边（如果还没被删除）。
-          // 但注意：如果重连成功，onReconnect 中会派发 EDGE_RECONNECTED 事件，其中会删除旧边并添加新边，所以我们这里不应该重复删除。
-          // 目前项目中的 mod-reconnect 原本在 RECONNECT_END 中判断 suppressCount > 0 时删除边。
-          // 为了保持行为，我们恢复该逻辑：
-          if (suppressCount > 0) {
-            console.log(`%c[mod-reconnect] 释放到空白，删除边 ${reconnectState.edgeId}`, 'color: #e67e22');
-            bus.dispatch({ type: 'EDGE_DELETED', edgeId: reconnectState.edgeId });
-          } else {
-            console.log(`%c[mod-reconnect] 可能成功重连，不删除边`, 'color: #e67e22');
-          }
-          
-          // 清理状态
+          console.log(`%c[mod-reconnect] 重连结束，边=${reconnectState.edgeId}，未收到成功事件，立即删除原边`, 'color: #e67e22');
+          bus.dispatch({ type: 'EDGE_DELETED', edgeId: reconnectState.edgeId });
           reconnectState = null;
-          // 再次设置抑制计数为极大，然后延迟归零
-          suppressCount = 999;
-          setTimeout(() => {
-            suppressCount = 0;
-            console.log(`%c[mod-reconnect] 抑制计数已归零`, 'color: #e67e22');
-          }, 0);
           break;
         }
       }
@@ -102,7 +88,6 @@ export const modReconnect: EditorMod = {
     return () => {
       unsub();
       reconnectState = null;
-      suppressCount = 0;
       console.log('[mod-reconnect] 已卸载');
     };
   },
@@ -114,8 +99,12 @@ export function validateReconnectConnection(
   edges: any[],
   nodes: any[]
 ): boolean {
-  console.log(`[mod-reconnect validate] source=${connection.source} target=${connection.target} handleSource=${connection.sourceHandle} handleTarget=${connection.targetHandle}`);
-  
+  // 源节点和目标节点不能相同
+  if (connection.source === connection.target) {
+    console.log(`[validate] ❌ 拒绝（自环）`);
+    return false;
+  }
+
   const sourceType = getPortType(nodes, connection.source, connection.sourceHandle ?? '', 'source');
   const targetType = getPortType(nodes, connection.target, connection.targetHandle ?? '', 'target');
   console.log(`[validate] 源类型=${sourceType} 目标类型=${targetType}`);
@@ -127,24 +116,10 @@ export function validateReconnectConnection(
     }
   }
 
+  // 如果在重连模式下，允许改变另一端（只要不是自环且类型兼容）
   if (reconnectState) {
-    const isSourceReconnect = reconnectState.handleType === 'source';
-    const isTargetReconnect = reconnectState.handleType === 'target';
-    console.log(`[validate] 重连模式: handleType=${reconnectState.handleType}, 源匹配=${connection.source === reconnectState.source && connection.sourceHandle === reconnectState.sourceHandle}, 目标匹配=${connection.target === reconnectState.target && connection.targetHandle === reconnectState.targetHandle}`);
-    if (isTargetReconnect &&
-        connection.source === reconnectState.source &&
-        connection.sourceHandle === reconnectState.sourceHandle) {
-      console.log(`[validate] ✅ 允许重连目标端`);
-      return true;
-    }
-    if (isSourceReconnect &&
-        connection.target === reconnectState.target &&
-        connection.targetHandle === reconnectState.targetHandle) {
-      console.log(`[validate] ✅ 允许重连源端`);
-      return true;
-    }
-    console.log(`[validate] ❌ 拒绝（重连规则不符）`);
-    return false;
+    console.log(`[validate] ✅ 允许重连（重连模式）`);
+    return true;
   }
 
   // 非重连时，检查目标端口是否已被占用
@@ -160,10 +135,7 @@ export function validateReconnectConnection(
   return true;
 }
 
-export function getSuppressCount(): number {
-  return suppressCount;
-}
-
-export function decreaseSuppressCount(): void {
-  if (suppressCount > 0) suppressCount--;
+// 可选：获取当前重连状态（供调试）
+export function getReconnectState() {
+  return reconnectState;
 }

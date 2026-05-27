@@ -81,7 +81,9 @@ interface EditorState {
 ### 工作流整体
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
-| `WORKFLOW_LOADED` | 加载/重置整个工作流 | `{ nodes: CustomNode[]; edges: CustomEdge[] }` |
+| `WORKFLOW_LOADED` | 加载/重置整个工作流 | `{ nodes: CustomNode[]; edges: CustomEdge[]; fromHistory?: boolean }` |
+
+> **注意**：`fromHistory` 标志用于防止历史记录 Mod 重复记录撤销/重做操作。
 
 ### 批量连线
 | 事件类型 | 说明 | Payload |
@@ -97,17 +99,18 @@ interface EditorState {
 | `RECONNECT_END` | 结束重连 | 无 |
 
 ### 对齐与布局
-| 事件类型 | 说明 |
-|----------|------|
-| `ALIGN_LEFT` | 左对齐 |
-| `ALIGN_RIGHT` | 右对齐 |
-| `ALIGN_TOP` | 顶对齐 |
-| `ALIGN_BOTTOM` | 底对齐 |
-| `ALIGN_CENTER_X` | 水平居中 |
-| `ALIGN_CENTER_Y` | 垂直居中 |
-| `DISTRIBUTE_HORIZONTAL` | 水平均分（需 ≥3 个节点） |
-| `DISTRIBUTE_VERTICAL` | 垂直均分（需 ≥3 个节点） |
-| `AUTO_LAYOUT` | 自动布局 |
+| 事件类型 | 说明 | Payload（可选） |
+|----------|------|----------------|
+| `ALIGN_LEFT` | 左对齐 | 无 |
+| `ALIGN_RIGHT` | 右对齐 | 无 |
+| `ALIGN_TOP` | 顶对齐 | 无 |
+| `ALIGN_BOTTOM` | 底对齐 | 无 |
+| `ALIGN_CENTER_X` | 水平居中 | 无 |
+| `ALIGN_CENTER_Y` | 垂直居中 | 无 |
+| `DISTRIBUTE_HORIZONTAL` | 水平均分（需 ≥3 个节点） | 无 |
+| `DISTRIBUTE_VERTICAL` | 垂直均分（需 ≥3 个节点） | 无 |
+| `AUTO_LAYOUT` | 自动布局 | `{ options?: { horizontalSpacing?: number; verticalSpacing?: number; startX?: number; startY?: number } }` |
+| `FIT_VIEW` | 居中画布 | `{ options?: { padding?: number; duration?: number } }` |
 
 ### 项目配置
 | 事件类型 | 说明 | Payload |
@@ -127,31 +130,31 @@ interface EditorState {
 | `FLOATING_SEARCH_OPEN` | 打开浮动搜索框 | `{ x: number; y: number }` |
 | `FLOATING_SEARCH_CLOSE` | 关闭浮动搜索框 | 无 |
 
-### 动态视图控制（新增）
+### 动态视图控制
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
 | `SET_VIEWPORT_LIMITS` | 动态修改画布缩放范围和平移边界 | `{ minZoom?: number; maxZoom?: number; translateExtent?: [[number,number],[number,number]] }` |
 | `SET_PAN_ON_DRAG` | 修改拖拽平移的鼠标按键 | `number[]`（如 `[1]` 左键，`[1,2]` 左键+中键） |
 | `SET_BACKGROUND_STYLE` | 动态修改画布背景样式 | `{ variant?: 'dots' \| 'lines' \| 'none'; gap?: number; size?: number; color?: string }` |
 
-### 画布视图（新增）
+### 画布视图
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
 | `VIEWPORT_CHANGED` | 画布缩放/平移时触发 | `{ x: number; y: number; zoom: number }` |
 
-### 对齐辅助线（新增）
+### 对齐辅助线
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
 | `RENDER_GUIDE_LINES` | 绘制辅助线 | `{ lines: Array<{ x1: number; y1: number; x2: number; y2: number; color?: string }> }` |
 | `CLEAR_GUIDE_LINES` | 清除所有辅助线 | 无 |
 
-### 主题颜色（新增）
+### 主题颜色
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
 | `SET_THEME_COLOR` | 修改单个 CSS 变量 | `{ variable: string; value: string }` |
 | `SET_THEME_COLORS` | 批量修改多个 CSS 变量 | `Record<string, string>` |
 
-### 错误处理（新增）
+### 错误处理
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
 | `ERROR_OCCURRED` | 发生错误（显示 Toast） | `{ message: string; type?: 'info' \| 'warning' \| 'error'; details?: any }` |
@@ -160,6 +163,16 @@ interface EditorState {
 | 事件类型 | 说明 | Payload |
 |----------|------|---------|
 | `APPLY_NODE_CHANGES` | 直接同步节点数组（由适配器使用） | `{ nodes: CustomNode[] }` |
+
+### 工具栏状态
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `SET_TOOLBAR_ENABLED` | 设置工具栏按钮启用状态 | `{ buttonId: string; enabled: boolean }` |
+
+### UI 状态更新
+| 事件类型 | 说明 | Payload |
+|----------|------|---------|
+| `UPDATE_STATUS` | 更新底部栏状态文本 | `{ id: string; text: string }` |
 
 ---
 
@@ -181,6 +194,7 @@ interface EditorState {
 | 错误处理 | `error-handler` | 捕获错误并派发 `ERROR_OCCURRED` 事件 |
 | 默认控件 | `default-controls` | 注册内置的内联控件类型（步进器、开关、下拉） |
 | 默认侧边栏按钮 | `default-sidebar-buttons` | 注册默认的侧边栏按钮（自动布局、小地图、保存、加载） |
+| 默认 UI | `default-ui` | 注册顶部栏、底部栏、左侧栏、右侧栏的默认布局 |
 
 ---
 
@@ -226,6 +240,17 @@ interface PortDefinition {
     type: 'number' | 'boolean' | 'exec' | '*';   // 数据类型，'*' 为通配符
     position: 'left' | 'right' | 'top' | 'bottom';
     style?: Record<string, unknown>;
+}
+
+interface InlineControl {
+    key: string;
+    type: 'number-stepper' | 'boolean-toggle' | 'select-dropdown';
+    label: string;
+    min?: number;
+    max?: number;
+    step?: number;
+    default?: unknown;
+    options?: string[];
 }
 ```
 
@@ -289,38 +314,53 @@ registerControlType('color-picker', ColorPicker);
 
 ## 8. UI 扩展注册中心
 
-以下注册中心允许 Mod 动态扩展界面，无需修改核心组件。
+以下注册中心允许 Mod 动态扩展界面，无需修改核心组件。**所有注册函数均返回一个清理函数，调用后可移除注册项。**
 
 ### 8.1 项目设置面板配置项
 从 `src/registry/projectConfigRegistry` 导入：
-- `registerProjectConfigField(field: ConfigField)`
-- `getRegisteredConfigFields()`
+- `registerProjectConfigField(field: ConfigField): () => void`
+- `getRegisteredConfigFields(): ConfigField[]`
 
-### 8.2 侧边栏按钮
+### 8.2 侧边栏
 从 `src/registry/sidebarRegistry` 导入：
-- `registerSidebarButton(button: SidebarButton)`
-- `getSidebarButtons()`
+- `registerSidebarComponent(component: SidebarComponent): () => void`
+- `registerSidebarButton(button: SidebarButton): () => void`
+- `getSidebarComponents(): SidebarComponent[]`
+- `getSidebarButtons(): SidebarButton[]`
 
-### 8.3 右键菜单项
+### 8.3 顶部栏
+从 `src/registry/topBarRegistry` 导入：
+- `registerTopBarLeft(item: TopBarItem): () => void`
+- `registerTopBarCenter(item: TopBarItem): () => void`
+- `registerTopBarRight(item: TopBarItem): () => void`
+
+### 8.4 底部栏
+从 `src/registry/bottomBarRegistry` 导入：
+- `registerBottomBarLeft(item: BottomBarItem): () => void`
+- `registerBottomBarCenter(item: BottomBarItem): () => void`
+- `registerBottomBarRight(item: BottomBarItem): () => void`
+
+### 8.5 右键菜单项
 从 `src/registry/contextMenuRegistry` 导入：
-- `registerNodeMenuItem(item: MenuItem)`
-- `registerPaneMenuItem(item: MenuItem)`
+- `registerNodeMenuItem(item: MenuItem): () => void`
+- `registerPaneMenuItem(item: MenuItem): () => void`
 
-### 8.4 属性面板扩展槽
+### 8.6 属性面板
 从 `src/registry/propsPanelRegistry` 导入：
-- `registerPropsPanelExtension(extension: PropsPanelExtension)`
+- `registerPropsPanelExtension(extension: PropsPanelExtension): () => void`
+- `registerPropsPanelComponent(component: PropsPanelComponent): () => void`
 
-### 8.5 浮动搜索过滤器
+### 8.7 浮动搜索过滤器
 从 `src/utils/searchExtensions` 导入：
-- `registerSearchFilter(filter: SearchFilter)`
+- `registerSearchFilter(filter: SearchFilter): () => void`
 
-### 8.6 批量连线端口匹配策略
+### 8.8 批量连线端口匹配策略
 从 `src/registry/batchConnectStrategyRegistry` 导入：
-- `registerBatchConnectStrategy(strategy: BatchConnectStrategy, priority?: number)`
+- `registerBatchConnectStrategy(strategy: BatchConnectStrategy, priority?: number): void`
 
-### 8.7 历史记录忽略事件
+### 8.9 历史记录忽略事件
 从 `src/registry/historyIgnoreRegistry` 导入：
-- `registerHistoryIgnoredEventType(eventType: string)`
+- `registerHistoryIgnoredEventType(eventType: string): void`
 
 具体参数类型请参考源代码或 `CUSTOM_MODS.md` 中的示例。
 
@@ -396,6 +436,12 @@ export function exportWorkflowData(nodes: any[], edges: any[]): Promise<void>;
 export function importWorkflowData(bus: EditorBus): Promise<void>;
 ```
 
+### `mod-reconnect`
+```typescript
+export function isReconnecting(): boolean;           // 是否处于重连模式
+export function validateReconnectConnection(connection: Connection, edges: Edge[], nodes: Node[]): boolean;
+```
+
 ---
 
 ## 11. Mod 编写模式示例
@@ -418,7 +464,8 @@ export const myMod: EditorMod = {
 ### 11.2 主动派发事件
 ```typescript
 bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: ['node_1', 'node_2'] });
-bus.dispatch({ type: 'AUTO_LAYOUT' });
+bus.dispatch({ type: 'AUTO_LAYOUT', options: { horizontalSpacing: 300, verticalSpacing: 180 } });
+bus.dispatch({ type: 'FIT_VIEW', options: { padding: 0.1, duration: 300 } });
 ```
 
 ### 11.3 注册自定义节点模板
@@ -463,6 +510,14 @@ bus.dispatch({
 });
 ```
 
+### 11.7 修改端口偏移距离
+```typescript
+bus.dispatch({
+    type: 'SET_THEME_COLOR',
+    payload: { variable: '--handle-offset-distance', value: '12px' }
+});
+```
+
 ---
 
 ## 12. 防御降级机制
@@ -484,6 +539,7 @@ bus.dispatch({
 - 节点模板注册中心会自动去重，多次注册同类型模板不会重复。
 - 若要覆盖内置模板，使用 `setBuiltInTemplates` 并记得在清理时恢复。
 - 所有事件定义见 `src/bus/types.ts`，可随时查阅最新完整列表。
+- 注册中心注册的函数建议保存返回的清理函数，在 Mod 卸载时调用，避免内存泄漏。
 
 ---
 
@@ -510,3 +566,4 @@ bus.dispatch({
 ```
 
 更多端口定义和控件配置请参考 `NODE_TEMPLATE_API.md`。
+```

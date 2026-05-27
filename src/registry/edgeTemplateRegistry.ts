@@ -1,9 +1,11 @@
 // src/registry/edgeTemplateRegistry.ts
 // 边类型注册中心 – 管理自定义边组件
 // 支持通过 Mod 动态注册新的边类型（动画边、带标签边等）
+// 默认注册 gradient 边类型并设置为默认边组件
 
 import type { EdgeProps } from '@xyflow/react';
 import type { ComponentType } from 'react';
+import GradientEdge from '../components/GradientEdge';
 
 // 默认边组件（React Flow 内置，一般不需要显式设置）
 let defaultEdgeComponent: ComponentType<EdgeProps> | undefined;
@@ -26,6 +28,7 @@ export function registerEdgeType(type: string, component: ComponentType<EdgeProp
 
 /**
  * 设置默认边组件（可选，通常 React Flow 自带 DefaultEdge）
+ * @param component 默认边组件
  */
 export function setDefaultEdgeComponent(component: ComponentType<EdgeProps>): void {
   defaultEdgeComponent = component;
@@ -45,3 +48,8 @@ export function getEdgeTypeMap(): Record<string, ComponentType<EdgeProps>> {
 export function getDefaultEdgeComponent(): ComponentType<EdgeProps> | undefined {
   return defaultEdgeComponent;
 }
+
+// ========== 注册默认的 gradient 边类型 ==========
+registerEdgeType('gradient', GradientEdge);
+// 将 gradient 设置为默认边组件（当边未指定 type 或 type 不匹配时使用）
+setDefaultEdgeComponent(GradientEdge);

@@ -23,7 +23,7 @@ import { modWorkflowIO } from './mod-workflow-io';
 import { modErrorHandler } from './mod-error-handler';
 import { modDefaultControls } from './mod-default-controls';
 import { modDefaultSidebarButtons } from './mod-default-sidebar-buttons';
-
+import { modDefaultUI } from './mod-default-ui';
 
 export function initMods(bus: EditorBus, extraMods: EditorMod[] = []): () => void {
   // ==================== 1. 定义内置 Mod 列表 ====================
@@ -42,6 +42,7 @@ export function initMods(bus: EditorBus, extraMods: EditorMod[] = []): () => voi
     modErrorHandler,
     modDefaultControls,
     modDefaultSidebarButtons,
+    modDefaultUI,
   ];
 
   // 构建内置 Mod 的 fallback 映射

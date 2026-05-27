@@ -130,8 +130,12 @@ targets.map((t, idx) => (
         type="target"             // React Flow 中 target 表示输入
         position={Position.Left}  // 默认左侧，也会根据 positionMap 匹配
         id={t.id}                 // 端口 ID，连线时需要
-        style={{ background: color, ...t.style }}
-        title={t.label}           // 悬浮提示
+        style={{
+            background: portColor,
+            ...(t.style ?? {}),
+            ...handleStyle,       // 动态样式（偏移、位置百分比等）
+        }}
+        data-tooltip={tooltipText}
     />
 ))
 ```
@@ -142,7 +146,28 @@ targets.map((t, idx) => (
 
 ---
 
-## 5. 连接校验中的端口类型获取
+## 5. 端口偏移配置（动态可调）
+
+端口相对于节点边缘的偏移距离可通过 CSS 变量 `--handle-offset-distance` 动态调整。默认值为 `7px`，你可以通过派发 `SET_THEME_COLOR` 事件来修改：
+
+```typescript
+bus.dispatch({
+    type: 'SET_THEME_COLOR',
+    payload: { variable: '--handle-offset-distance', value: '12px' }
+});
+```
+
+偏移方向：
+- `top` 端口向上偏移（负 Y）
+- `bottom` 端口向下偏移（正 Y）
+- `left` 端口向左偏移（负 X）
+- `right` 端口向右偏移（正 X）
+
+偏移距离独立于缩放，保持视觉一致性。
+
+---
+
+## 6. 连接校验中的端口类型获取
 
 在 `src/mods/mod-reconnect.ts` 中，`getPortType` 函数根据端口 ID 和方向获取端口数据类型，用于校验连接是否合法。
 
@@ -162,11 +187,11 @@ function getPortType(nodes, nodeId, handleId, handleKind): string | null {
 
 ---
 
-## 6. 从输入端口拖线（反向连接）
+## 7. 从输入端口拖线（反向连接）
 
 当你从输入端口拖线到空白区域时，系统会弹出反向连接菜单，帮助你快速创建能连接到该输入端口的节点。
 
-在 `src/hooks/useConnectionEndHandler.ts`（已被 Mod 替代，逻辑迁移至 `mod-connection-menu.ts`）中：
+在 `mod-connection-menu.ts` 中：
 
 ```typescript
 const targetPort = sourceTemplate.inputs?.find(i => i.id === fromHandle.id);
@@ -184,7 +209,82 @@ if (targetPort?.type) {
 
 ---
 
-## 7. 完整示例：自定义节点模板 Mod
+## 8. 内联控件（Inline Controls）
+
+模板中可以定义 `inlineControls` 数组，用于在节点内部直接渲染可交互控件（步进器、开关、下拉选择），无需打开属性面板。
+
+```typescript
+inlineControls: [
+    { key: 'value', type: 'number-stepper', label: '数值', min: -100, max: 100, step: 1 },
+    { key: 'enable', type: 'boolean-toggle', label: '启用', default: true },
+    { key: 'mode', type: 'select-dropdown', label: '模式', options: ['A+B', 'A-B'], default: 'A+B' }
+]
+```
+
+每个控件对应节点数据中的一个字段（`key`），修改时自动派发 `NODE_DATA_CHANGED` 事件并传播 `value` 到下游（如果 `propagate` 未禁用）。
+
+### 注册自定义控件类型
+
+通过 `src/registry/controlComponentRegistry.ts` 可以注册新的控件类型，例如滑块、颜色选择器等：
+
+```typescript
+import { registerControlType } from '../src/registry/controlComponentRegistry';
+import type { ControlComponentProps } from '../src/registry/controlComponentRegistry';
+
+const Slider: React.FC<ControlComponentProps> = ({ value, onChange, min, max }) => (
+    <input
+        type="range"
+        min={min ?? 0}
+        max={max ?? 100}
+        value={value ?? 0}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+    />
+);
+
+registerControlType('slider', Slider);
+```
+
+之后即可在模板中使用 `{ key: 'volume', type: 'slider', label: '音量', min: 0, max: 100 }`。
+
+---
+
+## 9. 端口样式高级定制
+
+每个端口可以单独设置 `style` 字段（CSS 样式对象）。例如，改变特定端口的颜色或形状：
+
+```typescript
+inputs: [
+    {
+        id: 'control',
+        label: '控制',
+        type: 'boolean',
+        position: 'left',
+        style: { background: '#ff9900', borderRadius: '2px' }
+    }
+]
+```
+
+注意：`style` 会与默认样式合并，优先级高于默认样式。
+
+---
+
+## 10. 节点尺寸与端口位置自适应
+
+节点会测量自身的实际宽高（通过 `measured` 属性），并根据端口数量动态调整最小高度/宽度，确保所有端口都能均匀分布在对应边缘上。这一逻辑在 `GenericNode.tsx` 中实现：
+
+```typescript
+const maxVerticalHandles = Math.max(
+    leftSidePortsCount,
+    rightSidePortsCount
+);
+const minHeight = maxVerticalHandles > 1 ? maxVerticalHandles * 28 + 40 : undefined;
+```
+
+你可以通过在模板中指定 `defaultWidth` 和 `defaultHeight` 来建议节点的初始大小，这些值会存储在节点 `data.__templateDefaultWidth` 中，供对齐和布局算法使用。
+
+---
+
+## 11. 完整示例：自定义节点模板 Mod
 
 将以下代码保存为 `custom-mods/my-custom-nodes.ts`，并在 `custom-mods/index.ts` 中注册，即可添加一个具有自定义输入/输出端口的节点。
 
@@ -229,29 +329,15 @@ export const myCustomNodeMod: EditorMod = {
 
 ---
 
-## 8. 内联控件（Inline Controls）
-
-模板中可以定义 `inlineControls` 数组，用于在节点内部直接渲染可交互控件（步进器、开关、下拉选择），无需打开属性面板。
-
-```typescript
-inlineControls: [
-    { key: 'value', type: 'number-stepper', label: '数值', min: -100, max: 100, step: 1 },
-    { key: 'enable', type: 'boolean-toggle', label: '启用', default: true },
-    { key: 'mode', type: 'select-dropdown', label: '模式', options: ['A+B', 'A-B'], default: 'A+B' }
-]
-```
-
-每个控件对应节点数据中的一个字段（`key`），修改时自动派发 `NODE_DATA_CHANGED` 事件并传播 `value` 到下游（如果 `propagate` 未禁用）。
-
----
-
-## 9. 总结
+## 12. 总结
 
 - 节点端口的全部信息均来自 `NodeTemplate` 的 `inputs` / `outputs` 或 `handles` 字段。
 - 通过 `registerNodeTemplates` 可轻松添加自定义端口配置。
 - `GenericNode` 会自动渲染这些端口，无需修改渲染代码。
 - 连接校验和反向连接菜单均依赖端口类型进行过滤。
 - 充分利用 `'*'` 通配符可以创建灵活的通用端口。
-- 内联控件提供了更便捷的交互方式。
+- 内联控件提供了更便捷的交互方式，且支持扩展新控件类型。
+- 端口偏移距离可通过 CSS 变量动态调整，实现主题自定义。
 
 > 更多信息可参阅 `src/nodeTemplates.ts`（类型定义）、`src/registry/nodeTemplateRegistry.ts`（注册中心）以及 `CUSTOM_MODS.md`（Mod 开发指南）。
+```

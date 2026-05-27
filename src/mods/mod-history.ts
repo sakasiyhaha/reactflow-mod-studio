@@ -1,6 +1,8 @@
 // src/mods/mod-history.ts
 // 历史记录 Mod - 使用状态对比法正确记录操作前的状态
 // 支持动态配置最大历史步数，支持注册忽略事件类型
+// 新增：派发 SET_TOOLBAR_ENABLED 事件控制撤销/重做按钮状态
+// 优化：使用 fromHistory 标志代替 isUndoRedo + setTimeout
 
 import type { EditorMod, EditorBus, EditorState } from '../bus/types';
 import { getMaxHistory } from '../../constants/editor';
@@ -11,7 +13,6 @@ import { syncIdCounter } from '../utils';
 let past: EditorState[] = [];
 let future: EditorState[] = [];
 let lastState: EditorState | null = null;
-let isUndoRedo = false;
 
 function takeSnapshot(state: EditorState): EditorState {
     return {
@@ -22,14 +23,25 @@ function takeSnapshot(state: EditorState): EditorState {
     };
 }
 
-function recordCurrentStateAsHistory(state: EditorState) {
-    if (isUndoRedo) return;
+function updateToolbarState(bus: EditorBus) {
+    bus.dispatch({
+        type: 'SET_TOOLBAR_ENABLED',
+        payload: { buttonId: 'undo', enabled: past.length > 0 }
+    });
+    bus.dispatch({
+        type: 'SET_TOOLBAR_ENABLED',
+        payload: { buttonId: 'redo', enabled: future.length > 0 }
+    });
+}
+
+function recordCurrentStateAsHistory(state: EditorState, bus: EditorBus) {
     const snapshot = takeSnapshot(state);
     past.push(snapshot);
     const maxHistory = getMaxHistory();
     if (past.length > maxHistory) past.shift();
     future = [];
     if (DEBUG) console.log(`[history] 📸 记录历史点 | past:${past.length} future:0 | 节点数:${state.nodes.length}`);
+    updateToolbarState(bus);
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -43,19 +55,22 @@ export const modHistory: EditorMod = {
     init(bus: EditorBus) {
         const initState = bus.getState();
         lastState = takeSnapshot(initState);
-        recordCurrentStateAsHistory(initState);
+        recordCurrentStateAsHistory(initState, bus);
 
         const unsub = bus.subscribe(({ event, state }) => {
-            if (isUndoRedo) return;
+            // 如果事件来自撤销/重做操作本身，不记录历史点
+            if (event.type === 'WORKFLOW_LOADED' && event.fromHistory === true) {
+                if (DEBUG) console.log('[history] 跳过来自撤销/重做的历史记录');
+                return;
+            }
 
-            // 使用注册中心判断是否应忽略
             if (isHistoryIgnoredEventType(event.type)) return;
 
             if (lastState) {
                 const hasChanged = JSON.stringify(lastState.nodes) !== JSON.stringify(state.nodes) ||
                                    JSON.stringify(lastState.edges) !== JSON.stringify(state.edges);
                 if (hasChanged) {
-                    recordCurrentStateAsHistory(lastState);
+                    recordCurrentStateAsHistory(lastState, bus);
                     if (DEBUG) console.log(`[history] 🔄 检测到状态变化，已记录历史点`);
                 }
             }
@@ -74,32 +89,31 @@ export const modHistory: EditorMod = {
                     if (DEBUG) console.log('[history] ⚠️ 无法撤销：past 为空');
                     return;
                 }
-                isUndoRedo = true;
                 const currentState = bus.getState();
                 future.push(takeSnapshot(currentState));
                 const prevState = past.pop()!;
                 if (DEBUG) console.log(`[history] ↩️ 撤销 | past:${past.length} future:${future.length} 恢复到 ${prevState.nodes.length} 个节点`);
-                bus.dispatch({ type: 'WORKFLOW_LOADED', nodes: prevState.nodes, edges: prevState.edges });
+                bus.dispatch({ type: 'WORKFLOW_LOADED', nodes: prevState.nodes, edges: prevState.edges, fromHistory: true });
                 lastState = takeSnapshot(prevState);
-                setTimeout(() => { isUndoRedo = false; }, 0);
+                updateToolbarState(bus);
             } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
                 e.preventDefault();
                 if (future.length === 0) {
                     if (DEBUG) console.log('[history] ⚠️ 无法重做：future 为空');
                     return;
                 }
-                isUndoRedo = true;
                 const currentState = bus.getState();
                 past.push(takeSnapshot(currentState));
                 const nextState = future.pop()!;
                 if (DEBUG) console.log(`[history] ↩️↩️ 重做 | past:${past.length} future:${future.length} 恢复到 ${nextState.nodes.length} 个节点`);
-                bus.dispatch({ type: 'WORKFLOW_LOADED', nodes: nextState.nodes, edges: nextState.edges });
+                bus.dispatch({ type: 'WORKFLOW_LOADED', nodes: nextState.nodes, edges: nextState.edges, fromHistory: true });
                 lastState = takeSnapshot(nextState);
-                setTimeout(() => { isUndoRedo = false; }, 0);
+                updateToolbarState(bus);
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
+        updateToolbarState(bus);
 
         return () => {
             unsub();
@@ -107,7 +121,6 @@ export const modHistory: EditorMod = {
             past = [];
             future = [];
             lastState = null;
-            isUndoRedo = false;
             if (DEBUG) console.log('[history] 已卸载');
         };
     },
