@@ -1,5 +1,6 @@
 // src/components/Sidebar.tsx
 import React, { useState, useEffect } from 'react';
+import SidebarButtonGroup from './SidebarButtonGroup';
 import {
   DndContext,
   closestCenter,
@@ -97,7 +98,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
           <StaticItem>
             <nodeLibraryComp.component />
           </StaticItem>
+          
         )}
+        <SidebarButtonGroup />
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={otherComps.map(c => c.id)} strategy={verticalListSortingStrategy}>
             {otherComps.map(comp => (
