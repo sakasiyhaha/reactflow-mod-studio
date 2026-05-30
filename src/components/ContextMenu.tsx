@@ -2,10 +2,12 @@
 // 节点右键菜单组件 —— 单选或多选时弹出，提供删除、复制、重置、锁定、批量连线、对齐分布等操作
 // 菜单选项根据选中节点数量（单选/多选）动态构建
 // 现在使用 getAllTemplates() 动态获取模板
+// 新增：支持通过 contextMenuRegistry 动态注册菜单项
 
 import { useEffect, useRef } from 'react';
 import { useEditorBusContext } from '../bus/EditorBusContext';
 import { getAllTemplates } from '../registry/nodeTemplateRegistry';
+import { getNodeMenuItems } from '../registry/contextMenuRegistry'; // 新增导入
 import { generateNodeId } from '../utils';
 import type { CustomNode } from '../utils/types';
 
@@ -161,6 +163,26 @@ export default function ContextMenu({
             },
             { label: '✖ 取消', action: onClose, type: 'separator' },
         );
+    }
+
+    // ==================== 新增：添加动态注册的节点右键菜单项 ====================
+    const dynamicItems = getNodeMenuItems(state, nodeId);
+    if (dynamicItems.length > 0) {
+        // 添加一个分隔线（如果 items 中还没有分隔线结尾）
+        const lastItem = items[items.length - 1];
+        if (!lastItem || lastItem.type !== 'separator') {
+            items.push({ label: '─── 扩展功能 ───', action: () => {}, type: 'separator' });
+        }
+        dynamicItems.forEach(item => {
+            items.push({
+                label: `${item.icon ? item.icon + ' ' : ''}${item.label}`,
+                action: () => {
+                    item.action(bus, nodeId);
+                    onClose();
+                },
+                type: 'normal',
+            });
+        });
     }
 
     return (
