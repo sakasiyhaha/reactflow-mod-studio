@@ -542,9 +542,58 @@ bus.dispatch({
 - 注册中心注册的函数建议保存返回的清理函数，在 Mod 卸载时调用，避免内存泄漏。
 
 ---
+## 14. 端口类型兼容规则注册中心 API
 
-## 附录：常用 NodeTemplate 示例
+从 `src/registry/connectionRuleRegistry` 导入：
 
+### 注册规则（合并）
+```typescript
+registerConnectionRule(sourceType: string, allowedTargetTypes: string[]): void
+为给定的源类型添加允许连接的目标类型（合并到现有规则中）。
+
+设置规则（覆盖）
+typescript
+setConnectionRule(sourceType: string, allowedTargetTypes: string[]): void
+完全替换给定源类型的允许目标列表。
+
+移除规则
+typescript
+removeConnectionRule(sourceType: string, targetType?: string): void
+如果提供 targetType，仅从允许列表中删除该类型；否则删除整个源类型规则。
+
+查询允许的目标类型
+typescript
+getAllowedTargets(sourceType: string): ReadonlySet<string>
+返回该源类型允许的目标类型集合（只读）。
+
+判断是否可连接
+typescript
+isValidConnectionType(sourceType: string, targetType: string): boolean
+核心校验函数，供内部连接逻辑使用。
+
+清空所有规则（重置为默认）
+typescript
+clearConnectionRules(): void
+获取规则快照（调试）
+typescript
+getConnectionRulesSnapshot(): Record<string, string[]>
+默认规则（模块加载时自动初始化）：
+
+number → ['number', 'boolean', '*']
+
+boolean → ['boolean', 'number', '*']
+
+exec → ['exec', '*']
+
+* → ['number', 'boolean', 'exec', '*']
+
+示例：添加自定义类型 item_ref
+
+typescript
+import { registerConnectionRule } from '../src/registry/connectionRuleRegistry';
+
+registerConnectionRule('item_ref', ['item_ref', '*']);
+此后，item_ref 类型的端口可以连接到 item_ref 或任意类型。
 ```typescript
 {
     type: 'adder',

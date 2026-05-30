@@ -132,6 +132,9 @@ export const customMods: EditorMod[] = [
 | 浮动搜索 | `floating-search` |
 | 工作流导入导出 | `workflow-io` |
 | 错误处理 | `error-handler` |
+| 默认控件 | `default-controls` |
+| 默认侧边栏按钮 | `default-sidebar-buttons` |
+| 默认 UI | `default-ui` |
 
 例如，覆盖历史记录：
 
@@ -157,6 +160,7 @@ export const myHistoryMod: EditorMod = {
 - `mod-node-lifecycle` 导出 `createOnNodesChange`, `createOnEdgesChange`, `createOnConnect`, `createOnReconnect`。
 - `mod-connection-menu` 导出 `createConnectionEndHandler`, `showConnectionMenu`, `hideConnectionMenu`。
 - `mod-workflow-io` 导出 `setWorkflowIOHandlers` 用于替换导入/导出格式。
+- `mod-reconnect` 导出 `isReconnecting` 和 `validateReconnectConnection`。
 
 **继承示例**：在不修改内置连接菜单逻辑的前提下，增加日志记录。
 
@@ -231,6 +235,15 @@ bus.dispatch({
     '--primary': '#ff6b6b',
     '--bg-canvas': '#1e1e2e',
   }
+});
+```
+
+### 5. 修改端口偏移距离
+
+```typescript
+bus.dispatch({
+    type: 'SET_THEME_COLOR',
+    payload: { variable: '--handle-offset-distance', value: '12px' }
 });
 ```
 
@@ -415,6 +428,40 @@ const unregister = registerTopBarCenter({
 
 ---
 
+## 动态添加自定义端口类型规则
+
+当你在节点模板中使用了非内置的端口类型（如 `item_ref`、`entity`、`vector3`）时，需要通过注册中心告诉编辑器该类型可以连接哪些其他类型。
+
+### 步骤
+
+1. 在你的自定义 Mod 中导入 `registerConnectionRule`（来自 `src/registry/connectionRuleRegistry`）。
+2. 在 `init` 函数中调用，注册你的类型规则。
+
+### 示例：为 `item_ref` 类型添加连接规则
+
+```typescript
+import type { EditorMod } from '../src/bus/types';
+import { registerConnectionRule } from '../src/registry/connectionRuleRegistry';
+
+export const myTypeRuleMod: EditorMod = {
+    id: 'my-type-rules',
+    init() {
+        // 允许 item_ref 连接到自身或通配符
+        registerConnectionRule('item_ref', ['item_ref', '*']);
+        // 如果需要更严格的限制，可以只允许连接到特定类型
+        // registerConnectionRule('item_ref', ['item_ref']);
+    },
+};
+```
+
+### 注意事项
+
+- 规则注册应在 Mod 初始化时完成，建议尽早注册（例如放在 `customMods` 数组靠前的位置）。
+- 如果多个 Mod 注册同一源类型的规则，默认是**合并**（除非使用 `setConnectionRule` 覆盖）。
+- 移除规则可以使用 `removeConnectionRule`，但通常不需要（因为页面刷新后规则会重置）。
+
+---
+
 ## 节点模板注册中心
 
 如果你需要动态添加或替换节点模板，可以使用 `src/registry/nodeTemplateRegistry.ts` 提供的函数：
@@ -528,6 +575,7 @@ export const saveShortcutMod: EditorMod = {
 - 利用事件总线进行通信，利用注册中心扩展 UI 和节点模板。
 - 防御降级机制保证即使 Mod 出错，编辑器也能正常工作。
 - 所有注册中心均提供清理函数，便于 Mod 卸载时释放资源。
+- 端口类型规则可通过注册中心动态添加，支持任意自定义类型。
 
 更多 API 细节请参考 `AI_MOD_API_REFERENCE.md`，节点模板定义请参考 `NODE_TEMPLATE_API.md`。
 ```

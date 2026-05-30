@@ -142,7 +142,7 @@ reactflow-mod-studio/
 - **注册中心清理机制**：所有注册 API 均返回 `unregister` 函数，Mod 卸载时自动清理，无内存泄漏。
 - **精确的节点尺寸订阅**：`GenericNode` 使用 `nodeLookup.get(id)` 精确订阅，避免全量遍历，性能优异。
 - **取消文件选择不卡死**：导入工作流时取消选择会正确关闭加载遮罩，体验流畅。
-
+- **动态端口类型规则**：通过 `registerConnectionRule` API 可随时添加自定义端口类型的连接规则，无需修改核心。
 ---
 
 ## 许可证
