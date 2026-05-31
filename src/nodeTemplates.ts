@@ -2,7 +2,8 @@
 // 节点模板类型定义（纯类型文件）
 // 实际的内置模板数据已移至 nodeTemplateRegistry.ts
 
-export type PortType = 'number' | 'boolean' | 'exec' | '*';
+export type BuiltInPortType = 'number' | 'boolean' | 'exec' | '*';
+export type PortType = BuiltInPortType | string;  // 允许任意自定义类型
 
 export interface PortDefinition {
     id: string;
@@ -39,6 +40,11 @@ export interface NodeTemplate {
     defaultData: Record<string, unknown>;
     properties: Record<string, { type: string; default: unknown }>;
     inlineControls?: InlineControl[];
-    defaultWidth?: number;   // 新增：节点默认宽度（像素）
-    defaultHeight?: number;  // 新增：节点默认高度（像素）
+    defaultWidth?: number;
+    defaultHeight?: number;
+}
+
+// 可选：提供一个类型守卫函数
+export function isBuiltInPortType(type: string): type is BuiltInPortType {
+    return ['number', 'boolean', 'exec', '*'].includes(type);
 }
