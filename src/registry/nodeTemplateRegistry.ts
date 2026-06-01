@@ -1,6 +1,7 @@
 // src/registry/nodeTemplateRegistry.ts
 // 节点模板注册中心 —— 管理内置和自定义节点模板
 // 支持覆盖内置模板（如通过 Mod 完全替换节点库）
+// 新增：registerNodeTemplates 返回 unregister 函数，支持清理
 
 import type { NodeTemplate } from '../nodeTemplates';
 
@@ -149,6 +150,9 @@ let builtInTemplates: NodeTemplate[] = [
 // 自定义模板数组，初始为空
 let customTemplates: NodeTemplate[] = [];
 
+// 保存默认内置模板快照（用于重置）
+const DEFAULT_BUILT_IN: NodeTemplate[] = builtInTemplates.map(t => ({...t}));
+
 /**
  * 获取当前所有可用的节点模板（内置 + 自定义）
  * 自定义模板的 type 若与内置重复，则覆盖内置模板
@@ -161,8 +165,9 @@ export function getAllTemplates(): NodeTemplate[] {
 
 /**
  * 注册一个或多个自定义节点模板（自动去重）
+ * @returns 取消注册函数（用于清理本次注册的模板）
  */
-export function registerNodeTemplates(templates: NodeTemplate[]): void {
+export function registerNodeTemplates(templates: NodeTemplate[]): () => void {
   const existingTypes = new Set(customTemplates.map(t => t.type));
   const newTemplates = templates.filter(t => !existingTypes.has(t.type));
   if (newTemplates.length > 0) {
@@ -171,6 +176,12 @@ export function registerNodeTemplates(templates: NodeTemplate[]): void {
   } else {
     console.log('[templateRegistry] 没有新的自定义模板需要注册（可能已被注册）');
   }
+  // 返回清理函数：移除本次注册的模板
+  return () => {
+    const idsToRemove = new Set(newTemplates.map(t => t.type));
+    customTemplates = customTemplates.filter(t => !idsToRemove.has(t.type));
+    console.log(`[templateRegistry] 已移除 ${newTemplates.length} 个自定义模板`);
+  };
 }
 
 /**
@@ -194,11 +205,6 @@ export function setBuiltInTemplates(templates: NodeTemplate[]): void {
  * 恢复内置模板为原始默认值
  */
 export function resetBuiltInTemplates(): void {
-  // 原始默认值直接硬编码恢复，但为了方便，我们可以调用 setBuiltInTemplates 传入原始数据
-  // 由于原始数据在文件顶部定义，我们将初始默认值另存一份。
   builtInTemplates = [...DEFAULT_BUILT_IN];
   console.log('[templateRegistry] 已恢复内置模板为默认值');
 }
-
-// 保存默认内置模板快照（用于重置）
-const DEFAULT_BUILT_IN: NodeTemplate[] = builtInTemplates.map(t => ({...t}));

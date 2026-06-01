@@ -12,6 +12,7 @@ export interface CustomNodeData {
   label?: string;                             // 节点标题（可覆盖模板的 title）
   value?: number | string;                    // 节点的当前值（用于数值输入、加法器等）
   locked?: boolean;                           // 是否锁定（锁定后无法拖拽移动）
+  _resources?: string[];
   [key: string]: unknown;                     // 索引签名，允许动态属性（如内联控件的其他字段）
 }
 

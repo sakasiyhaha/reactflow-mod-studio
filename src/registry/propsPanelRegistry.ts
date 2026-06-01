@@ -2,6 +2,7 @@
 import type { ComponentType } from 'react';
 import type { CustomNode } from '../utils/types';
 import type { EditorBus } from '../bus/types';
+import { ExtensionPoint, ExtensionManager } from './ExtensionPoint';
 
 export type PropsPanelSlot = 'top' | 'bottom';
 
@@ -24,53 +25,67 @@ export interface PropsPanelComponent {
   component: ComponentType<PropsPanelExtensionProps>;
 }
 
-let extensions: PropsPanelExtension[] = [];
-let panelComponents: PropsPanelComponent[] = [];
+// 分别管理扩展槽和面板组件
+const extensionManager = new ExtensionManager();
+const panelManager = new ExtensionManager();
 
-const sortByOrder = <T extends { order?: number }>(items: T[]): T[] =>
-  [...items].sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
+// 适配函数
+function extensionToPoint(ext: PropsPanelExtension): ExtensionPoint<PropsPanelExtension> {
+  return {
+    id: ext.id,
+    priority: ext.order ?? 100,
+    dependencies: [],
+    activate: () => ext,
+    deactivate: () => {},
+  };
+}
 
+function panelToPoint(panel: PropsPanelComponent): ExtensionPoint<PropsPanelComponent> {
+  return {
+    id: panel.id,
+    priority: panel.order,
+    dependencies: [],
+    activate: () => panel,
+    deactivate: () => {},
+  };
+}
+
+// 注册扩展槽
 export function registerPropsPanelExtension(extension: PropsPanelExtension): () => void {
-  const index = extensions.findIndex(e => e.id === extension.id);
-  if (index !== -1) extensions[index] = extension;
-  else extensions.push(extension);
-  extensions = sortByOrder(extensions);
+  if (extensionManager.getExtension(extension.id)) {
+    console.warn(`[propsPanelRegistry] 扩展 "${extension.id}" 已存在，将被覆盖`);
+  }
+  const unregister = extensionManager.register(extensionToPoint(extension));
   console.log(`[propsPanelRegistry] 已注册扩展: ${extension.id}`);
-
-  return () => {
-    const idx = extensions.findIndex(e => e.id === extension.id);
-    if (idx !== -1) {
-      extensions.splice(idx, 1);
-      console.log(`[propsPanelRegistry] 已卸载扩展: ${extension.id}`);
-    }
-  };
+  return unregister;
 }
 
+// 获取扩展槽（按 slot 和 condition 过滤）
 export function getPropsPanelExtensions(slot: PropsPanelSlot, selectedNode: CustomNode | null): PropsPanelExtension[] {
-  return extensions.filter(ext => ext.slot === slot && (!ext.condition || ext.condition(selectedNode)));
+  const exts = extensionManager.resolveOrder();
+  return exts
+    .map(ext => ext.activate() as PropsPanelExtension)
+    .filter(ext => ext.slot === slot && (!ext.condition || ext.condition(selectedNode)));
 }
 
+// 注册面板组件
 export function registerPropsPanelComponent(component: PropsPanelComponent): () => void {
-  const index = panelComponents.findIndex(c => c.id === component.id);
-  if (index !== -1) panelComponents[index] = component;
-  else panelComponents.push(component);
-  panelComponents = sortByOrder(panelComponents);
+  if (panelManager.getExtension(component.id)) {
+    console.warn(`[propsPanelRegistry] 面板组件 "${component.id}" 已存在，将被覆盖`);
+  }
+  const unregister = panelManager.register(panelToPoint(component));
   console.log(`[propsPanelRegistry] 已注册面板组件: ${component.id}`);
-
-  return () => {
-    const idx = panelComponents.findIndex(c => c.id === component.id);
-    if (idx !== -1) {
-      panelComponents.splice(idx, 1);
-      console.log(`[propsPanelRegistry] 已卸载面板组件: ${component.id}`);
-    }
-  };
+  return unregister;
 }
 
+// 获取所有面板组件（按 order 排序）
 export function getPropsPanelComponents(): PropsPanelComponent[] {
-  return [...panelComponents];
+  const exts = panelManager.resolveOrder();
+  return exts.map(ext => ext.activate() as PropsPanelComponent);
 }
 
+// 清空所有注册项（用于测试）
 export function clearPropsPanelRegistry(): void {
-  extensions = [];
-  panelComponents = [];
+  extensionManager.clear();
+  panelManager.clear();
 }

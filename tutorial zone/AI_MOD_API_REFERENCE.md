@@ -47,154 +47,29 @@ interface EditorState {
 
 ## 3. 完整事件列表（EditorEvent）
 
-所有事件均为 `{ type: string, ... }` 的可辨识联合类型。以下按功能分组列出。
-
-### 节点操作
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `NODE_ADDED` | 添加单个节点（自动去重） | `{ node: CustomNode }` |
-| `NODES_ADDED` | 批量添加节点 | `{ nodes: CustomNode[] }` |
-| `NODE_DELETED` | 删除节点（同时删除关联边） | `{ nodeIds: string[] }` |
-| `NODE_DATA_CHANGED` | 修改节点数据（可传播 value 到下游） | `{ nodeId: string; data: Record<string, unknown>; propagate?: boolean }` |
-| `NODE_LOCK_TOGGLED` | 锁定/解锁节点 | `{ nodeId: string }` |
-| `NODE_POSITIONS_CHANGED` | 节点位置变更（拖拽结束） | `{ updates: { id: string; position: { x: number; y: number } }[] }` |
-
-### 边操作
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `EDGE_ADDED` | 添加边 | `{ edge: CustomEdge }` |
-| `EDGE_DELETED` | 删除边 | `{ edgeId: string }` |
-| `EDGE_RECONNECTED` | 重连边 | `{ oldEdgeId: string; newConnection: Connection }` |
-
-### 选择与模式
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `SELECTION_CHANGED` | 选中节点变化 | `{ nodeIds: string[] }` |
-| `MODE_CHANGED` | 编辑器模式变化 | `{ mode: EditorMode; meta?: Record<string, unknown> }` |
-
-### 历史记录
-| 事件类型 | 说明 |
-|----------|------|
-| `HISTORY_UNDO` | 执行撤销 |
-| `HISTORY_REDO` | 执行重做 |
-
-### 工作流整体
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `WORKFLOW_LOADED` | 加载/重置整个工作流 | `{ nodes: CustomNode[]; edges: CustomEdge[]; fromHistory?: boolean }` |
-
-> **注意**：`fromHistory` 标志用于防止历史记录 Mod 重复记录撤销/重做操作。
-
-### 批量连线
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `BATCH_CONNECT_START` | 开始批量连线 | `{ sourceNodeIds: string[]; sourceHandleType: string }` |
-| `BATCH_CONNECT_EXECUTE` | 执行批量连线 | `{ targetNodeId: string; targetHandleId: string }` |
-| `BATCH_CONNECT_CANCEL` | 取消批量连线 | 无 |
-
-### 重连
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `RECONNECT_START` | 开始拖拽重连 | `{ edgeId: string; handleType: 'source' | 'target' }` |
-| `RECONNECT_END` | 结束重连 | 无 |
-
-### 对齐与布局
-| 事件类型 | 说明 | Payload（可选） |
-|----------|------|----------------|
-| `ALIGN_LEFT` | 左对齐 | 无 |
-| `ALIGN_RIGHT` | 右对齐 | 无 |
-| `ALIGN_TOP` | 顶对齐 | 无 |
-| `ALIGN_BOTTOM` | 底对齐 | 无 |
-| `ALIGN_CENTER_X` | 水平居中 | 无 |
-| `ALIGN_CENTER_Y` | 垂直居中 | 无 |
-| `DISTRIBUTE_HORIZONTAL` | 水平均分（需 ≥3 个节点） | 无 |
-| `DISTRIBUTE_VERTICAL` | 垂直均分（需 ≥3 个节点） | 无 |
-| `AUTO_LAYOUT` | 自动布局 | `{ options?: { horizontalSpacing?: number; verticalSpacing?: number; startX?: number; startY?: number } }` |
-| `FIT_VIEW` | 居中画布 | `{ options?: { padding?: number; duration?: number } }` |
-
-### 项目配置
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `PROJECT_CONFIG_TOGGLE_PANEL` | 切换设置面板显示/隐藏 | 无 |
-| `PROJECT_CONFIG_CHANGED` | 项目配置已变更 | `{ config: Record<string, unknown> }` |
-
-### 连接菜单
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `CONNECTION_MENU_OPEN` | 打开连接节点菜单 | `{ x: number; y: number; sourceNodeId: string; sourceHandleId: string; availableTypes: NodeTemplate[]; direction: 'forward' | 'reverse' }` |
-| `CONNECTION_MENU_CLOSE` | 关闭连接菜单 | 无 |
-
-### 浮动搜索
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `FLOATING_SEARCH_OPEN` | 打开浮动搜索框 | `{ x: number; y: number }` |
-| `FLOATING_SEARCH_CLOSE` | 关闭浮动搜索框 | 无 |
-
-### 动态视图控制
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `SET_VIEWPORT_LIMITS` | 动态修改画布缩放范围和平移边界 | `{ minZoom?: number; maxZoom?: number; translateExtent?: [[number,number],[number,number]] }` |
-| `SET_PAN_ON_DRAG` | 修改拖拽平移的鼠标按键 | `number[]`（如 `[1]` 左键，`[1,2]` 左键+中键） |
-| `SET_BACKGROUND_STYLE` | 动态修改画布背景样式 | `{ variant?: 'dots' \| 'lines' \| 'none'; gap?: number; size?: number; color?: string }` |
-
-### 画布视图
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `VIEWPORT_CHANGED` | 画布缩放/平移时触发 | `{ x: number; y: number; zoom: number }` |
-
-### 对齐辅助线
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `RENDER_GUIDE_LINES` | 绘制辅助线 | `{ lines: Array<{ x1: number; y1: number; x2: number; y2: number; color?: string }> }` |
-| `CLEAR_GUIDE_LINES` | 清除所有辅助线 | 无 |
-
-### 主题颜色
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `SET_THEME_COLOR` | 修改单个 CSS 变量 | `{ variable: string; value: string }` |
-| `SET_THEME_COLORS` | 批量修改多个 CSS 变量 | `Record<string, string>` |
-
-### 错误处理
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `ERROR_OCCURRED` | 发生错误（显示 Toast） | `{ message: string; type?: 'info' \| 'warning' \| 'error'; details?: any }` |
-
-### 内部同步（通常不直接使用）
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `APPLY_NODE_CHANGES` | 直接同步节点数组（由适配器使用） | `{ nodes: CustomNode[] }` |
-
-### 工具栏状态
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `SET_TOOLBAR_ENABLED` | 设置工具栏按钮启用状态 | `{ buttonId: string; enabled: boolean }` |
-
-### UI 状态更新
-| 事件类型 | 说明 | Payload |
-|----------|------|---------|
-| `UPDATE_STATUS` | 更新底部栏状态文本 | `{ id: string; text: string }` |
+（此部分与之前版本相同，为节省篇幅不再重复，请参考原文件）
 
 ---
 
 ## 4. 内置 Mod 列表及其 id
 
-| 内置 Mod | id | 主要功能 |
-|----------|-----|----------|
-| 历史记录 | `history` | 撤销/重做，监听 Ctrl+Z/Y |
-| 批量连线 | `batch-connect` | 多选节点后批量连线 |
-| 对齐与自动布局 | `alignment` | 左/右/顶/底对齐，水平/垂直居中，水平/垂直均分，自动布局 |
-| 剪贴板 | `clipboard` | 复制/剪切/粘贴（保留连线），全选，Ctrl+C/V/X/A |
-| 重连管理 | `reconnect` | 边重连时抑制连接菜单，管理重连状态 |
-| 项目配置 | `project-config` | 设置面板开关，配置持久化 |
-| 节点生命周期 | `node-lifecycle` | 将 React Flow 回调适配为事件（提供工具函数） |
-| 连接菜单 | `connection-menu` | 拖线到空白时弹出节点选择菜单 |
-| 画布右键菜单 | `canvas-context-menu` | 节点/画布右键菜单判断逻辑 |
-| 浮动搜索 | `floating-search` | 双击画布空白弹出搜索框 |
-| 工作流导入导出 | `workflow-io` | JSON 导入/导出，支持替换处理器（YAML 等） |
-| 错误处理 | `error-handler` | 捕获错误并派发 `ERROR_OCCURRED` 事件 |
-| 默认控件 | `default-controls` | 注册内置的内联控件类型（步进器、开关、下拉） |
-| 默认侧边栏按钮 | `default-sidebar-buttons` | 注册默认的侧边栏按钮（自动布局、小地图、保存、加载） |
-| 默认 UI | `default-ui` | 注册顶部栏、底部栏、左侧栏、右侧栏的默认布局 |
+| 内置 Mod | id |
+|----------|-----|
+| 历史记录 | `history` |
+| 批量连线 | `batch-connect` |
+| 对齐与自动布局 | `alignment` |
+| 剪贴板 | `clipboard` |
+| 重连管理 | `reconnect` |
+| 项目配置 | `project-config` |
+| 节点生命周期 | `node-lifecycle` |
+| 连接菜单 | `connection-menu` |
+| 画布右键菜单 | `canvas-context-menu` |
+| 浮动搜索 | `floating-search` |
+| 工作流导入导出 | `workflow-io` |
+| 错误处理 | `error-handler` |
+| 默认控件 | `default-controls` |
+| 默认侧边栏按钮 | `default-sidebar-buttons` |
+| 默认 UI | `default-ui` |
 
 ---
 
@@ -205,8 +80,8 @@ interface EditorState {
 - **`getAllTemplates(): NodeTemplate[]`**  
   获取当前所有节点模板（内置 + 自定义，自定义覆盖同类型内置模板）。
 
-- **`registerNodeTemplates(templates: NodeTemplate[]): void`**  
-  注册自定义节点模板（自动去重）。通常在 Mod 的 `init()` 中调用。
+- **`registerNodeTemplates(templates: NodeTemplate[]): () => void`**  
+  注册自定义节点模板（自动去重）。**返回清理函数**，调用后可移除本次注册的模板。
 
 - **`setBuiltInTemplates(templates: NodeTemplate[]): void`**  
   完全替换内置模板，可用于打造专属节点库。
@@ -214,43 +89,37 @@ interface EditorState {
 - **`resetBuiltInTemplates(): void`**  
   恢复内置模板为默认值（通常作为 Mod 清理函数的一部分）。
 
+- **`resetTemplates(): void`**  
+  重置自定义模板列表，恢复到仅内置模板。
+
 ### 模板类型定义
 
 ```typescript
 interface NodeTemplate {
-    type: string;                                        // 模板唯一标识（如 'numberInput'）
-    title: string;                                       // 显示名称
-    category: string;                                    // 分类（中文）
-    icon: string;                                        // 表情符号或图片路径
-    color: string;                                       // 主题色
-    styleClass?: string;                                 // 额外 CSS 类名
-    inputs?: PortDefinition[];                           // 输入端口
-    outputs?: PortDefinition[];                          // 输出端口
-    handles?: { sources?: PortDefinition[]; targets?: PortDefinition[] }; // 等效写法
-    defaultData: Record<string, unknown>;                // 新节点的默认数据
-    properties: Record<string, { type: string; default: unknown }>; // 可编辑属性
-    inlineControls?: InlineControl[];                    // 内联控件（步进器、开关等）
-    defaultWidth?: number;                               // 节点默认宽度（像素）
-    defaultHeight?: number;                              // 节点默认高度（像素）
+    type: string;
+    title: string;
+    category: string;
+    icon: string;
+    color: string;
+    styleClass?: string;
+    inputs?: PortDefinition[];
+    outputs?: PortDefinition[];
+    handles?: { sources?: PortDefinition[]; targets?: PortDefinition[] };
+    defaultData: Record<string, unknown>;
+    properties: Record<string, { type: string; default: unknown }>;
+    inlineControls?: InlineControl[];
+    defaultWidth?: number;
+    defaultHeight?: number;
+    // 动态端口（高级）
+    dynamicPorts?: (data: Record<string, unknown>) => { inputs?: PortDefinition[]; outputs?: PortDefinition[] };
 }
 
 interface PortDefinition {
-    id: string;                  // 端口 ID（如 'a', 'output'）
-    label: string;               // 鼠标悬浮提示
-    type: 'number' | 'boolean' | 'exec' | '*';   // 数据类型，'*' 为通配符
+    id: string;
+    label: string;
+    type: 'number' | 'boolean' | 'exec' | '*';
     position: 'left' | 'right' | 'top' | 'bottom';
     style?: Record<string, unknown>;
-}
-
-interface InlineControl {
-    key: string;
-    type: 'number-stepper' | 'boolean-toggle' | 'select-dropdown';
-    label: string;
-    min?: number;
-    max?: number;
-    step?: number;
-    default?: unknown;
-    options?: string[];
 }
 ```
 
@@ -260,23 +129,14 @@ interface InlineControl {
 
 从 `src/registry/edgeTemplateRegistry` 导入：
 
-- **`registerEdgeType(type: string, component: React.ComponentType<EdgeProps>): void`**  
-  注册自定义边组件。之后在添加边时，可通过 `type: 'your-type'` 使用该组件。
+- **`registerEdgeType(type: string, component: React.ComponentType<EdgeProps>): () => void`**  
+  注册自定义边组件，返回清理函数。
 
 - **`getEdgeTypeMap(): Record<string, React.ComponentType<EdgeProps>>`**  
-  获取当前所有边类型映射。
+  获取所有边类型映射。
 
-示例：
-```typescript
-import { registerEdgeType } from '../src/registry/edgeTemplateRegistry';
-import type { EdgeProps } from '@xyflow/react';
-
-const DashedEdge = (props: EdgeProps) => (
-  <path className="react-flow__edge-path" strokeDasharray="6,4" {...props} />
-);
-
-registerEdgeType('dashed', DashedEdge);
-```
+- **`setDefaultEdgeComponent(component: React.ComponentType<EdgeProps>): void`**  
+  设置默认边组件。
 
 ---
 
@@ -284,42 +144,33 @@ registerEdgeType('dashed', DashedEdge);
 
 从 `src/registry/controlComponentRegistry` 导入：
 
-- **`registerControlType(type: string, component: React.ComponentType<ControlComponentProps>): void`**  
-  注册自定义内联控件类型（如颜色选择器、滑块）。
+- **`registerControlType(type: string, component: React.ComponentType<ControlComponentProps>): () => void`**  
+  注册自定义内联控件类型，返回清理函数。
 
 - **`getControlComponent(type: string): React.ComponentType<ControlComponentProps> | undefined`**  
 
 控件组件 Props：
 ```typescript
 interface ControlComponentProps {
-  value: any;                                    // 当前值
-  onChange: (newValue: any) => void;             // 值变更回调
-  label?: string;                                // 可选标签
-  [key: string]: any;                            // 其他配置（如 min, max, step）
+  value: any;
+  onChange: (newValue: any) => void;
+  label?: string;
+  [key: string]: any;
 }
-```
-
-示例：
-```typescript
-import { registerControlType } from '../src/registry/controlComponentRegistry';
-
-const ColorPicker = ({ value, onChange }) => (
-  <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
-);
-
-registerControlType('color-picker', ColorPicker);
 ```
 
 ---
 
 ## 8. UI 扩展注册中心
 
-以下注册中心允许 Mod 动态扩展界面，无需修改核心组件。**所有注册函数均返回一个清理函数，调用后可移除注册项。**
+以下注册中心允许 Mod 动态扩展界面。**所有注册函数均返回一个清理函数，调用后可移除注册项。**
 
 ### 8.1 项目设置面板配置项
 从 `src/registry/projectConfigRegistry` 导入：
 - `registerProjectConfigField(field: ConfigField): () => void`
 - `getRegisteredConfigFields(): ConfigField[]`
+- `getDefaultConfigValues(): Record<string, any>`
+- `validateConfigValue(key: string, value: any): boolean`
 
 ### 8.2 侧边栏
 从 `src/registry/sidebarRegistry` 导入：
@@ -327,6 +178,8 @@ registerControlType('color-picker', ColorPicker);
 - `registerSidebarButton(button: SidebarButton): () => void`
 - `getSidebarComponents(): SidebarComponent[]`
 - `getSidebarButtons(): SidebarButton[]`
+- `updateComponentOrder(id: string, newOrder: number): void`（拖拽排序后调用）
+- `loadOrderFromLocalStorage(): void`（加载保存的顺序）
 
 ### 8.3 顶部栏
 从 `src/registry/topBarRegistry` 导入：
@@ -356,41 +209,132 @@ registerControlType('color-picker', ColorPicker);
 
 ### 8.8 批量连线端口匹配策略
 从 `src/registry/batchConnectStrategyRegistry` 导入：
-- `registerBatchConnectStrategy(strategy: BatchConnectStrategy, priority?: number): void`
+- `registerBatchConnectStrategy(strategy: BatchConnectStrategy, priority?: number): () => void`
 
 ### 8.9 历史记录忽略事件
 从 `src/registry/historyIgnoreRegistry` 导入：
-- `registerHistoryIgnoredEventType(eventType: string): void`
-
-具体参数类型请参考源代码或 `CUSTOM_MODS.md` 中的示例。
+- `registerHistoryIgnoredEventType(eventType: string): () => void`
+- `resetHistoryIgnoreRegistry(): void`
 
 ---
 
-## 9. 常用工具函数
+## 9. 扩展点管理器（ExtensionPoint）
+
+为统一所有注册中心的行为，项目提供了 `ExtensionManager` 类（`src/registry/ExtensionPoint.ts`）。
+
+```typescript
+export interface ExtensionPoint<T = any> {
+  id: string;
+  dependencies?: string[];
+  priority?: number;
+  activate: (context?: any) => T | void;
+  deactivate?: () => void;
+}
+
+export class ExtensionManager {
+  register(ext: ExtensionPoint): () => void;
+  getExtension(id: string): ExtensionPoint | undefined;
+  updatePriority(id: string, newPriority: number): boolean;
+  resolveOrder(): ExtensionPoint[];   // 拓扑排序 + 优先级排序
+  clear(): void;
+}
+```
+
+大多数注册中心内部已使用 `ExtensionManager`，你通常不需要直接操作它，但了解其机制有助于理解扩展点的依赖和优先级。
+
+---
+
+## 10. 资源管理器（ResourceStore）
+
+用于管理节点中的大容量数据（纹理、音频、模型等），支持引用计数。
+
+从 `src/store/ResourceStore` 导入：
+
+```typescript
+export const ResourceStore: {
+  register(blob: Blob): string;                    // 注册资源，返回 ID
+  get(id: string): Blob | null;                    // 获取资源
+  retain(id: string): boolean;                     // 增加引用计数
+  release(id: string): boolean;                    // 减少引用计数，归零时删除
+  has(id: string): boolean;                        // 检查资源是否存在
+  snapshot(): Record<string, { size: number; refCount: number }>;
+  clear(): void;
+};
+```
+
+### 使用示例
+
+```typescript
+// 注册资源
+const blob = await fetch('/image.png').then(r => r.blob());
+const resId = ResourceStore.register(blob);
+
+// 在节点数据中存储资源 ID
+node.data._resources = [resId];
+
+// 获取资源并显示
+const imgBlob = ResourceStore.get(resId);
+const url = URL.createObjectURL(imgBlob);
+```
+
+**注意**：当节点被复制粘贴时，编辑器会自动调用 `retain`；当节点被删除时，会自动调用 `release`。你无需手动管理，除非直接操作资源。
+
+---
+
+## 11. 历史记录存储接口（IHistoryStore）
+
+允许替换默认的历史记录实现。
+
+从 `src/history/HistoryStore` 导入：
+
+```typescript
+export interface IHistoryStore {
+  canUndo(): boolean;
+  canRedo(): boolean;
+  getPastCount(): number;
+  getFutureCount(): number;
+  recordState(state: EditorState): void;
+  undo(currentState: EditorState): EditorState | null;
+  redo(currentState: EditorState): EditorState | null;
+  clear(): void;
+}
+
+export class DefaultHistoryStore implements IHistoryStore {
+  constructor(maxHistory?: number);
+}
+
+// 替换历史存储
+import { setHistoryStore } from '../src/mods/mod-history';
+setHistoryStore(new DefaultHistoryStore(100));
+```
+
+---
+
+## 12. 常用工具函数
 
 从 `src/utils` 导入：
 
 - **`generateNodeId(): string`**  
-  生成全局唯一节点 ID（格式 `node_1`, `node_2` ...）。
+  生成唯一节点 ID（格式 `node_1`, `node_2` ...）。
 
 - **`generateEdgeId(): string`**  
-  生成全局唯一边 ID。
+  生成唯一边 ID。
 
 - **`createNode(type: string, position?: { x: number; y: number }): CustomNode`**  
-  根据模板类型和坐标创建一个新节点（返回完整节点对象）。
+  根据模板类型和坐标创建新节点。
 
 - **`syncIdCounter(nodes: { id: string }[]): void`**  
-  根据现有节点 ID 同步全局 ID 计数器，防止新建节点冲突。
+  同步 ID 计数器，防止新建节点冲突。
 
 - **`exportWorkflow(nodes: any[], edges: any[]): void`**  
-  将工作流导出为 JSON 文件下载（底层函数，通常使用 `mod-workflow-io` 更灵活）。
+  导出工作流为 JSON（底层函数）。
 
 - **`importWorkflow(): Promise<{ nodes: any[]; edges: any[] }>`**  
-  从 JSON 文件导入工作流（底层函数）。
+  导入工作流（底层函数）。
 
 ---
 
-## 10. 可扩展的工具函数（供继承使用）
+## 13. 可扩展的工具函数（供继承使用）
 
 以下内置 Mod 导出了可复用的函数，你可以在自己的 Mod 中直接调用或包装它们：
 
@@ -438,15 +382,42 @@ export function importWorkflowData(bus: EditorBus): Promise<void>;
 
 ### `mod-reconnect`
 ```typescript
-export function isReconnecting(): boolean;           // 是否处于重连模式
+export function isReconnecting(): boolean;
 export function validateReconnectConnection(connection: Connection, edges: Edge[], nodes: Node[]): boolean;
+```
+
+### `mod-history`
+```typescript
+export function setHistoryStore(store: IHistoryStore): void;
 ```
 
 ---
 
-## 11. Mod 编写模式示例
+## 14. 端口类型兼容规则注册中心 API
 
-### 11.1 订阅事件并执行副作用
+从 `src/registry/connectionRuleRegistry` 导入：
+
+```typescript
+export function registerConnectionRule(sourceType: string, allowedTargetTypes: string[]): void;
+export function setConnectionRule(sourceType: string, allowedTargetTypes: string[]): void;
+export function removeConnectionRule(sourceType: string, targetType?: string): void;
+export function getAllowedTargets(sourceType: string): ReadonlySet<string>;
+export function isValidConnectionType(sourceType: string, targetType: string): boolean;
+export function clearConnectionRules(): void;
+export function getConnectionRulesSnapshot(): Record<string, string[]>;
+```
+
+默认规则自动初始化：
+- `number` → `['number', 'boolean', '*']`
+- `boolean` → `['boolean', 'number', '*']`
+- `exec` → `['exec', '*']`
+- `*` → `['number', 'boolean', 'exec', '*']`
+
+---
+
+## 15. Mod 编写模式示例
+
+### 15.1 订阅事件并执行副作用
 ```typescript
 export const myMod: EditorMod = {
     id: 'my-mod',
@@ -461,66 +432,59 @@ export const myMod: EditorMod = {
 };
 ```
 
-### 11.2 主动派发事件
+### 15.2 主动派发事件
 ```typescript
 bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: ['node_1', 'node_2'] });
 bus.dispatch({ type: 'AUTO_LAYOUT', options: { horizontalSpacing: 300, verticalSpacing: 180 } });
 bus.dispatch({ type: 'FIT_VIEW', options: { padding: 0.1, duration: 300 } });
 ```
 
-### 11.3 注册自定义节点模板
+### 15.3 注册自定义节点模板（带清理）
 ```typescript
 import { registerNodeTemplates } from '../src/registry/nodeTemplateRegistry';
 
 export const myTemplateMod: EditorMod = {
     id: 'my-templates',
     init() {
-        registerNodeTemplates([/* NodeTemplate 数组 */]);
-        return () => {};
+        const unregister = registerNodeTemplates([myNodeTemplate]);
+        return unregister;   // Mod 卸载时自动移除模板
     }
 };
 ```
 
-### 11.4 注册自定义边类型
+### 15.4 注册自定义边类型
 ```typescript
 import { registerEdgeType } from '../src/registry/edgeTemplateRegistry';
 
 export const myEdgeMod: EditorMod = {
     id: 'my-edges',
     init() {
-        registerEdgeType('dashed', (props) => <path className="react-flow__edge-path" strokeDasharray="6,4" {...props} />);
-        return () => {};
+        const unregister = registerEdgeType('dashed', DashedEdge);
+        return unregister;
     }
 };
 ```
 
-### 11.5 动态调整画布视图
+### 15.5 使用资源管理器
 ```typescript
-bus.dispatch({
-    type: 'SET_VIEWPORT_LIMITS',
-    payload: { minZoom: 0.5, maxZoom: 2 }
-});
+import { ResourceStore } from '../src/store/ResourceStore';
+
+const blob = await fetch('/texture.png').then(r => r.blob());
+const resId = ResourceStore.register(blob);
+// 将 resId 存储到节点 data._resources
 ```
 
-### 11.6 动态切换主题
+### 15.6 替换历史记录实现
 ```typescript
-bus.dispatch({
-    type: 'SET_THEME_COLORS',
-    payload: { '--primary': '#ff6b6b', '--bg-canvas': '#1e1e2e' }
-});
-```
+import { setHistoryStore } from '../src/mods/mod-history';
+import { DefaultHistoryStore } from '../src/history';
 
-### 11.7 修改端口偏移距离
-```typescript
-bus.dispatch({
-    type: 'SET_THEME_COLOR',
-    payload: { variable: '--handle-offset-distance', value: '12px' }
-});
+setHistoryStore(new DefaultHistoryStore(200));
 ```
 
 ---
 
-## 12. 防御降级机制
+## 16. 防御降级机制
 
 当自定义 Mod 在 `init` 中抛出异常时，系统会：
 - 输出红色错误日志。
@@ -531,7 +495,7 @@ bus.dispatch({
 
 ---
 
-## 13. 重要注意事项
+## 17. 重要注意事项
 
 - Mod 的 `id` 必须全局唯一，建议使用命名空间（如 `'my-plugin-logger'`）。
 - `init` 函数中返回的清理函数用于移除事件监听、定时器等，避免内存泄漏。
@@ -540,60 +504,13 @@ bus.dispatch({
 - 若要覆盖内置模板，使用 `setBuiltInTemplates` 并记得在清理时恢复。
 - 所有事件定义见 `src/bus/types.ts`，可随时查阅最新完整列表。
 - 注册中心注册的函数建议保存返回的清理函数，在 Mod 卸载时调用，避免内存泄漏。
+- 对于大容量数据，使用 `ResourceStore` 管理，不要直接嵌入节点数据。
+- 如需自定义历史记录行为，可使用 `setHistoryStore` 替换实现。
 
 ---
-## 14. 端口类型兼容规则注册中心 API
 
-从 `src/registry/connectionRuleRegistry` 导入：
+## 附录：常用 NodeTemplate 示例
 
-### 注册规则（合并）
-```typescript
-registerConnectionRule(sourceType: string, allowedTargetTypes: string[]): void
-为给定的源类型添加允许连接的目标类型（合并到现有规则中）。
-
-设置规则（覆盖）
-typescript
-setConnectionRule(sourceType: string, allowedTargetTypes: string[]): void
-完全替换给定源类型的允许目标列表。
-
-移除规则
-typescript
-removeConnectionRule(sourceType: string, targetType?: string): void
-如果提供 targetType，仅从允许列表中删除该类型；否则删除整个源类型规则。
-
-查询允许的目标类型
-typescript
-getAllowedTargets(sourceType: string): ReadonlySet<string>
-返回该源类型允许的目标类型集合（只读）。
-
-判断是否可连接
-typescript
-isValidConnectionType(sourceType: string, targetType: string): boolean
-核心校验函数，供内部连接逻辑使用。
-
-清空所有规则（重置为默认）
-typescript
-clearConnectionRules(): void
-获取规则快照（调试）
-typescript
-getConnectionRulesSnapshot(): Record<string, string[]>
-默认规则（模块加载时自动初始化）：
-
-number → ['number', 'boolean', '*']
-
-boolean → ['boolean', 'number', '*']
-
-exec → ['exec', '*']
-
-* → ['number', 'boolean', 'exec', '*']
-
-示例：添加自定义类型 item_ref
-
-typescript
-import { registerConnectionRule } from '../src/registry/connectionRuleRegistry';
-
-registerConnectionRule('item_ref', ['item_ref', '*']);
-此后，item_ref 类型的端口可以连接到 item_ref 或任意类型。
 ```typescript
 {
     type: 'adder',

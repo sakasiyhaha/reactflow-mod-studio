@@ -1,11 +1,13 @@
 // src/mods/mod-clipboard.ts
 // 剪贴板 Mod - 处理复制、剪切、粘贴操作（保留连线）
 // 优化：粘贴后自动选中新节点，增加 Ctrl+A 全选
+// 新增：粘贴时增加资源引用计数（ResourceStore.retain）
 
 import type { EditorMod, EditorBus } from '../bus/types';
 import { generateNodeId } from '../utils';
 import { DEBUG } from '../../config/debug';
 import type { CustomNode, CustomEdge } from '../utils/types';
+import { ResourceStore } from '../store/ResourceStore';
 
 /** 剪贴板数据结构：存储节点和它们之间的边 */
 interface ClipboardData {
@@ -28,34 +30,27 @@ export const modClipboard: EditorMod = {
   init(bus: EditorBus) {
     // 注册全局键盘事件
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 如果焦点在输入框内，不处理快捷键
       if (isEditableTarget(e.target)) return;
-
-      // 仅处理 Ctrl / Cmd 组合键
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
-
       const key = e.key.toLowerCase();
 
       // ---------- Ctrl+C 复制 ----------
       if (key === 'c') {
-        e.preventDefault();                               // 阻止浏览器默认行为
-        const state = bus.getState();                     // 获取当前状态
-        const selectedIds = new Set(state.selection);     // 当前选中的节点 ID 集合
+        e.preventDefault();
+        const state = bus.getState();
+        const selectedIds = new Set(state.selection);
         const selectedNodes = state.nodes.filter(n => selectedIds.has(n.id));
         if (selectedNodes.length === 0) return;
 
-        // 只复制两端都在选中节点集合内的边
         const selectedEdges = state.edges.filter(
           e => selectedIds.has(e.source) && selectedIds.has(e.target)
         );
 
-        // 深拷贝选中的节点和边，存入剪贴板
         clipboard = {
           nodes: selectedNodes.map(node => structuredClone(node)) as CustomNode[],
           edges: selectedEdges.map(edge => structuredClone(edge)) as CustomEdge[],
         };
-
         if (DEBUG) console.log(`[mod-clipboard] 复制 ${clipboard.nodes.length} 个节点，${clipboard.edges.length} 条边`);
       }
 
@@ -71,7 +66,6 @@ export const modClipboard: EditorMod = {
           e => selectedIds.has(e.source) && selectedIds.has(e.target)
         );
 
-        // 存入选中的节点和边（与复制相同）
         clipboard = {
           nodes: selectedNodes.map(node => structuredClone(node)) as CustomNode[],
           edges: selectedEdges.map(edge => structuredClone(edge)) as CustomEdge[],
@@ -79,7 +73,7 @@ export const modClipboard: EditorMod = {
 
         if (DEBUG) console.log(`[mod-clipboard] 剪切 ${clipboard.nodes.length} 个节点，${clipboard.edges.length} 条边`);
 
-        // 然后删除画布上的这些节点 → 实现“剪切”
+        // 删除画布上的节点（删除时会自动释放资源，由资源生命周期 Mod 负责）
         bus.dispatch({ type: 'NODE_DELETED', nodeIds: Array.from(selectedIds) });
       }
 
@@ -93,14 +87,29 @@ export const modClipboard: EditorMod = {
 
         // 1. 创建新节点，偏移位置避免重叠
         const newNodes: CustomNode[] = clipboard.nodes.map((node, index) => {
-          const oldId = node.id;                  // 保留旧 ID
-          const newId = generateNodeId();         // 生成新 ID
-          oldIdToNewId.set(oldId, newId);         // 记录映射
+          const oldId = node.id;
+          const newId = generateNodeId();
+          oldIdToNewId.set(oldId, newId);
+
+          // 粘贴时，为新节点中的每个资源增加引用计数
+          const resources = node.data._resources;
+          if (resources && resources.length > 0) {
+            for (const resId of resources) {
+              // 如果资源存在，增加引用计数；如果不存在（理论上不应该），则跳过
+              if (ResourceStore.has(resId)) {
+                ResourceStore.retain(resId);
+                if (DEBUG) console.log(`[mod-clipboard] 粘贴时增加资源引用: ${resId}`);
+              } else {
+                console.warn(`[mod-clipboard] 粘贴时发现不存在的资源: ${resId}，跳过`);
+              }
+            }
+          }
+
           return {
             ...structuredClone(node),
             id: newId,
             position: {
-              x: (node.position?.x ?? 0) + 50 * (index + 1),  // 逐步偏移
+              x: (node.position?.x ?? 0) + 50 * (index + 1),
               y: (node.position?.y ?? 0) + 50 * (index + 1),
             },
           } as CustomNode;
@@ -109,14 +118,14 @@ export const modClipboard: EditorMod = {
         // 2. 批量添加新节点
         bus.dispatch({ type: 'NODES_ADDED', nodes: newNodes });
 
-        // 3. 为新节点创建新边（两端节点的旧 ID 都能映射到新 ID 的边才复制）
+        // 3. 为新节点创建新边
         const newEdges: CustomEdge[] = clipboard.edges
           .filter(edge => oldIdToNewId.has(edge.source) && oldIdToNewId.has(edge.target))
           .map(edge => ({
             ...structuredClone(edge),
-            id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,  // 新边 ID
-            source: oldIdToNewId.get(edge.source)!,   // 映射为新源节点 ID
-            target: oldIdToNewId.get(edge.target)!,   // 映射为新目标节点 ID
+            id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            source: oldIdToNewId.get(edge.source)!,
+            target: oldIdToNewId.get(edge.target)!,
           })) as CustomEdge[];
 
         // 4. 逐条添加边
@@ -128,7 +137,7 @@ export const modClipboard: EditorMod = {
 
         if (DEBUG) console.log(`[mod-clipboard] 粘贴 ${newNodes.length} 个节点，${newEdges.length} 条边`);
 
-        // 5. 粘贴后自动选中这些新节点（方便用户继续操作）
+        // 5. 粘贴后自动选中这些新节点
         Promise.resolve().then(() => {
           bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: newNodes.map(n => n.id) });
         });
@@ -137,16 +146,14 @@ export const modClipboard: EditorMod = {
       // ---------- Ctrl+A 全选 ----------
       else if (key === 'a') {
         e.preventDefault();
-        const allNodeIds = bus.getState().nodes.map(n => n.id);  // 所有节点 ID
+        const allNodeIds = bus.getState().nodes.map(n => n.id);
         bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: allNodeIds });
         if (DEBUG) console.log('[mod-clipboard] 全选节点');
       }
     };
 
-    // 注册全局键盘监听
     window.addEventListener('keydown', handleKeyDown);
 
-    // 清理函数：移除键盘监听，清空剪贴板
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       clipboard = null;

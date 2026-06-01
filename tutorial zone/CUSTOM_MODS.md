@@ -161,6 +161,7 @@ export const myHistoryMod: EditorMod = {
 - `mod-connection-menu` 导出 `createConnectionEndHandler`, `showConnectionMenu`, `hideConnectionMenu`。
 - `mod-workflow-io` 导出 `setWorkflowIOHandlers` 用于替换导入/导出格式。
 - `mod-reconnect` 导出 `isReconnecting` 和 `validateReconnectConnection`。
+- `mod-history` 导出 `setHistoryStore`，允许替换历史记录存储实现。
 
 **继承示例**：在不修改内置连接菜单逻辑的前提下，增加日志记录。
 
@@ -178,7 +179,6 @@ export const loggingConnectionMenuMod: EditorMod = {
             originalHandler(event, connectionState);
         };
         // 替换 FlowCanvas 中的 onConnectEnd 需要修改 App.tsx，但更简单的方式是直接监听事件
-        // 这里演示订阅 CONNECTION_MENU_OPEN 事件来增加日志
         const unsub = bus.subscribe(({ event }) => {
             if (event.type === 'CONNECTION_MENU_OPEN') {
                 console.log('[enhanced] 连接菜单已打开', event.payload);
@@ -462,11 +462,103 @@ export const myTypeRuleMod: EditorMod = {
 
 ---
 
+## 资源管理（大容量数据外部化）
+
+对于节点中可能包含的大容量数据（如纹理图片、音频文件、模型数据等），编辑器提供了 `ResourceStore` 全局管理器，支持引用计数和自动释放。
+
+### 注册资源
+
+```typescript
+import { ResourceStore } from '../src/store/ResourceStore';
+
+// 将 Blob 注册到资源管理器，返回唯一 ID
+const imageBlob = await fetch('/path/to/image.png').then(r => r.blob());
+const resourceId = ResourceStore.register(imageBlob);
+
+// 在节点数据中存储资源 ID
+node.data._resources = [resourceId];
+```
+
+### 增加/减少引用计数
+
+当复制粘贴节点时，编辑器会自动调用 `ResourceStore.retain` 增加引用计数；当节点被删除时，会自动调用 `ResourceStore.release` 减少引用计数。你通常不需要手动调用这些方法，除非你在 Mod 中直接操作资源。
+
+### 获取资源数据
+
+```typescript
+const blob = ResourceStore.get(resourceId);
+if (blob) {
+  const url = URL.createObjectURL(blob);
+  // 用于显示图片、播放音频等
+}
+```
+
+### 工作流导入导出
+
+工作流导出时，`_resources` 中引用的资源会自动序列化为 base64 嵌入 JSON 文件；导入时会自动恢复资源并重新生成 ID。你无需额外处理。
+
+---
+
+## 历史记录可扩展
+
+编辑器默认使用基于内存栈的历史记录实现，但你可以通过 `setHistoryStore` 替换为自定义存储（如压缩存储、IndexedDB 持久化、协作撤销等）。
+
+### 自定义历史记录实现
+
+```typescript
+import { setHistoryStore } from '../src/mods/mod-history';
+import type { IHistoryStore, EditorState } from '../src/bus/types';
+
+class MyCustomHistoryStore implements IHistoryStore {
+  private undoStack: EditorState[] = [];
+  private redoStack: EditorState[] = [];
+
+  canUndo(): boolean { return this.undoStack.length > 0; }
+  canRedo(): boolean { return this.redoStack.length > 0; }
+  getPastCount(): number { return this.undoStack.length; }
+  getFutureCount(): number { return this.redoStack.length; }
+
+  recordState(state: EditorState): void {
+    // 可以在此处实现压缩、去重、持久化等逻辑
+    this.undoStack.push(structuredClone(state));
+    this.redoStack = [];
+  }
+
+  undo(currentState: EditorState): EditorState | null {
+    if (!this.canUndo()) return null;
+    this.redoStack.push(structuredClone(currentState));
+    return this.undoStack.pop()!;
+  }
+
+  redo(currentState: EditorState): EditorState | null {
+    if (!this.canRedo()) return null;
+    this.undoStack.push(structuredClone(currentState));
+    return this.redoStack.pop()!;
+  }
+
+  clear(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+  }
+}
+
+// 在 Mod 中替换
+export const myHistoryMod: EditorMod = {
+  id: 'my-history',
+  init() {
+    setHistoryStore(new MyCustomHistoryStore());
+    return () => {};
+  },
+};
+```
+
+---
+
 ## 节点模板注册中心
 
 如果你需要动态添加或替换节点模板，可以使用 `src/registry/nodeTemplateRegistry.ts` 提供的函数：
 
-- `registerNodeTemplates(templates)`：添加自定义模板（与内置模板不重复时有效）。
+- `registerNodeTemplates(templates)`：添加自定义模板，**返回清理函数**，可用于卸载时移除。
 - `setBuiltInTemplates(templates)`：完全替换内置模板。
 - `resetBuiltInTemplates()`：恢复默认内置模板。
 - `getAllTemplates()`：获取当前所有模板（自定义覆盖内置）。
@@ -482,8 +574,9 @@ const myNode: NodeTemplate = { /* ... */ };
 export const myNodeMod: EditorMod = {
     id: 'my-nodes',
     init() {
-        registerNodeTemplates([myNode]);
-        return () => {}; // 无需清理，不影响下次加载
+        const unregister = registerNodeTemplates([myNode]);
+        // 可选：返回清理函数，在 Mod 卸载时移除自定义模板
+        return unregister;
     },
 };
 ```
@@ -576,6 +669,8 @@ export const saveShortcutMod: EditorMod = {
 - 防御降级机制保证即使 Mod 出错，编辑器也能正常工作。
 - 所有注册中心均提供清理函数，便于 Mod 卸载时释放资源。
 - 端口类型规则可通过注册中心动态添加，支持任意自定义类型。
+- 大容量资源可通过 `ResourceStore` 管理，自动处理引用计数和导入导出。
+- 历史记录可替换为自定义存储实现。
 
 更多 API 细节请参考 `AI_MOD_API_REFERENCE.md`，节点模板定义请参考 `NODE_TEMPLATE_API.md`。
 ```

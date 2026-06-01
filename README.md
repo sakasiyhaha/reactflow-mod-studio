@@ -27,7 +27,7 @@
   多选节点后一键批量连线，还有左 / 右 / 顶 / 底对齐和水平 / 垂直均分，不用一个一个拖。
 
 - **撤销 / 重做**  
-  基于历史快照，支持 `Ctrl+Z` / `Ctrl+Y`，改坏了随时回去。
+  基于历史快照，支持 `Ctrl+Z` / `Ctrl+Y`，改坏了随时回去。历史记录实现可替换，支持自定义存储策略。
 
 - **自动保存 / 恢复**  
   项目自带了示例 Mod，能自动把工作流存进 `localStorage`，刷新页面后还能恢复回来。
@@ -39,7 +39,13 @@
   通过 CSS 变量 `--handle-offset-distance` 可动态调整端口相对于节点的偏移距离，适应不同主题或缩放需求。
 
 - **自动布局参数可配置**  
-  `AUTO_LAYOUT` 事件支持传入 `horizontalSpacing`、`verticalSpacing` 等参数，布局密度随意控制。
+  `AUTO_LAYOUT` 事件支持传入 `horizontalSpacing`、`verticalSpacing`、`startX`、`startY` 等参数，布局密度随意控制。
+
+- **资源外部化管理**  
+  大容量数据（纹理、音频、模型）可通过 `ResourceStore` 统一管理，支持引用计数自动释放，工作流导入导出时自动序列化/反序列化。
+
+- **历史记录可插拔**  
+  可通过 `setHistoryStore` 替换默认的历史记录实现，支持压缩存储、持久化、协作撤销等高级场景。
 
 ---
 
@@ -74,6 +80,8 @@ reactflow-mod-studio/
 │   ├── components/       # UI 组件（全部通过注册中心可扩展）
 │   ├── hooks/            # 自定义 Hook（布局、项目配置、端口样式）
 │   ├── registry/         # 扩展注册中心（侧边栏、右键菜单、属性面板、控件类型等）
+│   ├── store/            # 全局资源管理器（ResourceStore）
+│   ├── history/          # 历史记录抽象接口和默认实现
 │   └── utils/            # 工具函数、类型定义、对齐/布局算法
 ├── tutorial zone/        # 📘 所有教程文档（AI Mod API、配对编程指南、自定义 Mod 等）
 ├── .gitignore
@@ -116,17 +124,17 @@ reactflow-mod-studio/
 
 | Mod 名称 | id | 说明 |
 |----------|-----|------|
-| 历史记录 | `history` | 撤销/重做，支持动态最大步数 |
+| 历史记录 | `history` | 撤销/重做，支持动态最大步数，可替换存储实现 |
 | 批量连线 | `batch-connect` | 多选节点后一键连接 |
 | 对齐与自动布局 | `alignment` | 对齐、均分、自动布局（支持参数） |
-| 剪贴板 | `clipboard` | Ctrl+C/V/X/A，保留连线 |
+| 剪贴板 | `clipboard` | Ctrl+C/V/X/A，保留连线，支持资源引用计数 |
 | 重连管理 | `reconnect` | 边重连逻辑，抑制连接菜单干扰 |
 | 项目配置 | `project-config` | 设置面板，配置持久化 |
 | 节点生命周期 | `node-lifecycle` | React Flow 回调适配为事件 |
 | 连接菜单 | `connection-menu` | 拖线到空白弹出节点选择菜单 |
 | 画布右键菜单 | `canvas-context-menu` | 右键菜单判断逻辑 |
 | 浮动搜索 | `floating-search` | 双击画布弹出节点搜索框 |
-| 工作流导入导出 | `workflow-io` | JSON 导入导出，可替换为 YAML 等 |
+| 工作流导入导出 | `workflow-io` | JSON 导入导出，可替换为 YAML 等，支持资源序列化 |
 | 错误处理 | `error-handler` | 统一错误 Toast 提示 |
 | 默认控件 | `default-controls` | 注册步进器、开关、下拉等控件 |
 | 默认侧边栏按钮 | `default-sidebar-buttons` | 自动布局、小地图、保存/加载按钮 |
@@ -143,6 +151,9 @@ reactflow-mod-studio/
 - **精确的节点尺寸订阅**：`GenericNode` 使用 `nodeLookup.get(id)` 精确订阅，避免全量遍历，性能优异。
 - **取消文件选择不卡死**：导入工作流时取消选择会正确关闭加载遮罩，体验流畅。
 - **动态端口类型规则**：通过 `registerConnectionRule` API 可随时添加自定义端口类型的连接规则，无需修改核心。
+- **资源外部化管理**：大容量数据与节点数据分离，剪贴板复制时自动增加引用计数，删除时自动释放，导入导出自动序列化。
+- **历史记录可替换**：通过 `setHistoryStore` 可自定义历史存储实现（压缩、持久化、协作等）。
+
 ---
 
 ## 许可证

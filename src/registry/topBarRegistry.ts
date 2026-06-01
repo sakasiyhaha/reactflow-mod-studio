@@ -1,5 +1,6 @@
 // src/registry/topBarRegistry.ts
 import type { ReactNode } from 'react';
+import { ExtensionPoint, ExtensionManager } from './ExtensionPoint';
 
 export interface TopBarItem {
   id: string;
@@ -13,49 +14,67 @@ export interface TopBarItem {
   children?: TopBarItem[];
 }
 
-let leftItems: TopBarItem[] = [];
-let centerItems: TopBarItem[] = [];
-let rightItems: TopBarItem[] = [];
+// 三个独立存储区域
+const leftManager = new ExtensionManager();
+const centerManager = new ExtensionManager();
+const rightManager = new ExtensionManager();
 
-const sortByOrder = (items: TopBarItem[]) => [...items].sort((a, b) => a.order - b.order);
-
-function registerItem(store: TopBarItem[], item: TopBarItem, area: string): () => void {
-  const index = store.findIndex(i => i.id === item.id);
-  if (index !== -1) store[index] = item;
-  else store.push(item);
-  const newStore = sortByOrder(store);
-  // 更新原数组引用（直接修改外部变量需要小心，这里简化：修改原数组内容）
-  store.length = 0;
-  store.push(...newStore);
-  console.log(`[topBarRegistry] 已注册 ${area} 项: ${item.id}`);
-
-  return () => {
-    const idx = store.findIndex(i => i.id === item.id);
-    if (idx !== -1) {
-      store.splice(idx, 1);
-      console.log(`[topBarRegistry] 已卸载 ${area} 项: ${item.id}`);
-    }
+// 辅助函数：将 TopBarItem 转换为 ExtensionPoint
+function itemToPoint(item: TopBarItem): ExtensionPoint<TopBarItem> {
+  // 注意：children 子菜单项不参与独立的扩展点管理，它们随父项一起存储
+  return {
+    id: item.id,
+    priority: item.order,
+    dependencies: [],
+    activate: () => item,
+    deactivate: () => {},
   };
 }
 
+// 注册 API（返回 unregister 函数）
 export function registerTopBarLeft(item: TopBarItem): () => void {
-  return registerItem(leftItems, item, '左侧');
+  if (leftManager.getExtension(item.id)) {
+    console.warn(`[topBarRegistry] 左侧项 "${item.id}" 已存在，将被覆盖`);
+  }
+  const unregister = leftManager.register(itemToPoint(item));
+  console.log(`[topBarRegistry] 已注册左侧项: ${item.id}`);
+  return unregister;
 }
 
 export function registerTopBarCenter(item: TopBarItem): () => void {
-  return registerItem(centerItems, item, '中间');
+  if (centerManager.getExtension(item.id)) {
+    console.warn(`[topBarRegistry] 中间项 "${item.id}" 已存在，将被覆盖`);
+  }
+  const unregister = centerManager.register(itemToPoint(item));
+  console.log(`[topBarRegistry] 已注册中间项: ${item.id}`);
+  return unregister;
 }
 
 export function registerTopBarRight(item: TopBarItem): () => void {
-  return registerItem(rightItems, item, '右侧');
+  if (rightManager.getExtension(item.id)) {
+    console.warn(`[topBarRegistry] 右侧项 "${item.id}" 已存在，将被覆盖`);
+  }
+  const unregister = rightManager.register(itemToPoint(item));
+  console.log(`[topBarRegistry] 已注册右侧项: ${item.id}`);
+  return unregister;
 }
 
+// 获取 API（按 order 排序）
 export function getTopBarLeftItems(): TopBarItem[] {
-  return [...leftItems];
+  return leftManager.resolveOrder().map(ext => ext.activate() as TopBarItem);
 }
+
 export function getTopBarCenterItems(): TopBarItem[] {
-  return [...centerItems];
+  return centerManager.resolveOrder().map(ext => ext.activate() as TopBarItem);
 }
+
 export function getTopBarRightItems(): TopBarItem[] {
-  return [...rightItems];
+  return rightManager.resolveOrder().map(ext => ext.activate() as TopBarItem);
+}
+
+// 清空所有注册项（用于测试）
+export function clearTopBarRegistry(): void {
+  leftManager.clear();
+  centerManager.clear();
+  rightManager.clear();
 }

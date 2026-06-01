@@ -5,25 +5,35 @@
 
 import type { EdgeProps } from '@xyflow/react';
 import type { ComponentType } from 'react';
+import { ExtensionPoint, ExtensionManager } from './ExtensionPoint';
 import GradientEdge from '../components/GradientEdge';
+
+// 使用 ExtensionManager 管理边类型组件
+const edgeTypeManager = new ExtensionManager();
 
 // 默认边组件（React Flow 内置，一般不需要显式设置）
 let defaultEdgeComponent: ComponentType<EdgeProps> | undefined;
-
-// 自定义边类型映射表
-const edgeTypeMap: Record<string, ComponentType<EdgeProps>> = {};
 
 /**
  * 注册自定义边类型
  * @param type 边类型标识（如 'animated', 'label-edge'）
  * @param component 对应的 React 组件
+ * @returns 取消注册函数
  */
-export function registerEdgeType(type: string, component: ComponentType<EdgeProps>): void {
-  if (edgeTypeMap[type]) {
+export function registerEdgeType(type: string, component: ComponentType<EdgeProps>): () => void {
+  if (edgeTypeManager.getExtension(type)) {
     console.warn(`[edgeRegistry] 边类型 "${type}" 已被覆盖`);
   }
-  edgeTypeMap[type] = component;
+  const ext: ExtensionPoint<ComponentType<EdgeProps>> = {
+    id: type,
+    priority: 100,
+    dependencies: [],
+    activate: () => component,
+    deactivate: () => {},
+  };
+  const unregister = edgeTypeManager.register(ext);
   console.log(`[edgeRegistry] 已注册边类型: ${type}`);
+  return unregister;
 }
 
 /**
@@ -38,8 +48,12 @@ export function setDefaultEdgeComponent(component: ComponentType<EdgeProps>): vo
  * 获取所有边类型的映射（供 FlowCanvas 使用）
  */
 export function getEdgeTypeMap(): Record<string, ComponentType<EdgeProps>> {
-  // 返回副本，防止外部修改
-  return { ...edgeTypeMap };
+  const exts = edgeTypeManager.resolveOrder();
+  const map: Record<string, ComponentType<EdgeProps>> = {};
+  for (const ext of exts) {
+    map[ext.id] = ext.activate();
+  }
+  return map;
 }
 
 /**
@@ -47,6 +61,14 @@ export function getEdgeTypeMap(): Record<string, ComponentType<EdgeProps>> {
  */
 export function getDefaultEdgeComponent(): ComponentType<EdgeProps> | undefined {
   return defaultEdgeComponent;
+}
+
+/**
+ * 清空所有注册的边类型（用于测试）
+ */
+export function clearEdgeRegistry(): void {
+  edgeTypeManager.clear();
+  defaultEdgeComponent = undefined;
 }
 
 // ========== 注册默认的 gradient 边类型 ==========
