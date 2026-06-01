@@ -1,8 +1,10 @@
 // src/components/ProjectConfigPanel.tsx
 // 项目设置面板 —— 动态渲染注册的配置项
+// 新增：支持自定义重置处理器（通过 registerResetHandler 扩展）
 
 import { useProjectConfig } from '../hooks/useProjectConfig';
 import { DEBUG } from '../../config/debug';
+import { getResetHandler } from '../registry/settingsPanelRegistry';
 
 export default function ProjectConfigPanel() {
   const {
@@ -15,6 +17,16 @@ export default function ProjectConfigPanel() {
     resetConfig,
     registeredFields,
   } = useProjectConfig();
+
+  // 包装重置函数，支持外部处理器（如确认对话框）
+  const handleReset = () => {
+    const handler = getResetHandler();
+    if (handler) {
+      handler(resetConfig);   // 将默认 resetConfig 传递给自定义处理器
+    } else {
+      resetConfig();          // 无处理器时直接重置
+    }
+  };
 
   // 渲染不同类型的输入控件
   const renderField = (field: typeof registeredFields[0]) => {
@@ -105,7 +117,7 @@ export default function ProjectConfigPanel() {
         )}
 
         <div style={{ marginTop: 20, display: 'flex', gap: 8 }}>
-          <button onClick={resetConfig} style={{ flex: 1, padding: '8px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}>
+          <button onClick={handleReset} style={{ flex: 1, padding: '8px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}>
             恢复默认
           </button>
         </div>
