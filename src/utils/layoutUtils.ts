@@ -4,7 +4,7 @@
 //   1. 节点自身的 width/height（React Flow 测量值）
 //   2. 节点 data 中的 __templateDefaultWidth / __templateDefaultHeight
 //   3. 全局默认值（DEFAULT_NODE_WIDTH / DEFAULT_NODE_HEIGHT）
-
+import { LAYOUT } from '../../config/numbers';
 import { DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT } from '../../config/editorConfig';
 
 /**
@@ -46,7 +46,7 @@ export function autoLayout(
         startY?: number;              // 起始 Y 坐标，默认 300
     } = {}
 ) {
-    const { horizontalSpacing = 250, verticalSpacing = 150, startX = 100, startY = 300 } = options;
+    const { horizontalSpacing = LAYOUT.AUTO_LAYOUT_HORIZONTAL_SPACING, verticalSpacing = LAYOUT.AUTO_LAYOUT_VERTICAL_SPACING, startX = LAYOUT.AUTO_LAYOUT_START_X, startY = LAYOUT.AUTO_LAYOUT_START_Y } = options;
     if (!nodes || nodes.length === 0) return [];
 
     // 构建邻接表（出边和入边）

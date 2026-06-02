@@ -45,9 +45,117 @@ interface EditorState {
 
 ---
 
-## 3. 完整事件列表（EditorEvent）
+## 3. 新增功能 API
 
-（此部分与之前版本相同，为节省篇幅不再重复，请参考原文件）
+### 3.1 动态端口
+
+在 `NodeTemplate` 中增加字段：
+
+```typescript
+interface NodeTemplate {
+    // ... 原有字段
+    dynamicPorts?: (data: Record<string, unknown>) => {
+        inputs?: PortDefinition[];
+        outputs?: PortDefinition[];
+    };
+    dynamicPortsDeps?: (data: Record<string, unknown>) => string[];
+}
+```
+
+- `dynamicPorts`：根据节点数据返回动态生成的端口。
+- `dynamicPortsDeps`：声明哪些数据字段的变化会触发端口重新计算。若不提供，默认使用 `Object.keys(data)`。
+
+**实现机制**：组件内部使用 `useUpdateNodeInternals` 在端口结构变化时刷新节点布局。开发环境下会打印变化日志。
+
+### 3.2 资源外部化（ResourceStore）
+
+```typescript
+import { ResourceStore } from '../src/store/ResourceStore';
+
+// 注册资源，返回唯一 ID
+const id = ResourceStore.register(blob: Blob): string;
+
+// 获取资源 Blob
+const blob = ResourceStore.get(id: string): Blob | null;
+
+// 增加引用计数（复制节点时自动调用）
+ResourceStore.retain(id: string): boolean;
+
+// 减少引用计数，归零时删除资源（删除节点时自动调用）
+ResourceStore.release(id: string): boolean;
+
+// 检查资源是否存在
+ResourceStore.has(id: string): boolean;
+
+// 获取所有资源的快照（调试用）
+ResourceStore.snapshot(): Record<string, { size: number; refCount: number }>;
+
+// 清空所有资源（测试用）
+ResourceStore.clear(): void;
+```
+
+**自动集成**：
+- 节点删除时，`useEditorBus` 会自动释放 `data._resources` 中的资源。
+- 复制/粘贴时，`mod-clipboard` 会自动增加引用计数。
+- 工作流导出时，资源自动转为 base64 嵌入 JSON。
+- 工作流导入时，base64 恢复为 Blob 并重新注册，节点中的资源 ID 自动更新。
+
+### 3.3 导入导出钩子
+
+从 `src/mods/mod-workflow-io` 导入：
+
+```typescript
+type BeforeExportHook = (data: { nodes: any[]; edges: any[] }) => 
+    { nodes: any[]; edges: any[] } | Promise<{ nodes: any[]; edges: any[] }>;
+
+type AfterImportHook = (data: { nodes: any[]; edges: any[] }) => void | Promise<void>;
+
+// 注册导出前钩子
+registerBeforeExportHook(hook: BeforeExportHook): () => void;
+
+// 注册导入后钩子
+registerAfterImportHook(hook: AfterImportHook): () => void;
+```
+
+钩子按注册顺序执行，支持异步。钩子内部错误不会阻塞流程，仅记录错误。
+
+### 3.4 确认辅助函数
+
+从 `src/bus/confirmable` 导入：
+
+```typescript
+async function dispatchConfirmable(
+    bus: EditorBus,
+    event: EditorEvent,
+    message: string
+): Promise<void>;
+```
+
+- 弹出 `window.confirm`，用户确认后同步派发 `event`，取消则 reject Promise。
+- 适用于删除节点等危险操作。
+
+### 3.5 数字配置（消除魔法数字）
+
+所有数字常量集中在 `config/numbers.ts`：
+
+```typescript
+import { LAYOUT, TIMEOUTS, HISTORY, NODE, UI, TOOLTIP, WORKFLOW_IO } from '../../config/numbers';
+```
+
+常用常量：
+
+| 模块 | 常量 | 默认值 | 说明 |
+|------|------|--------|------|
+| LAYOUT | `DEFAULT_NODE_WIDTH` | 160 | 默认节点宽度 |
+| LAYOUT | `DEFAULT_NODE_HEIGHT` | 60 | 默认节点高度 |
+| LAYOUT | `MIN_ALIGN_GAP` | 20 | 对齐分布最小间距 |
+| LAYOUT | `AUTO_LAYOUT_HORIZONTAL_SPACING` | 250 | 自动布局水平间距 |
+| TIMEOUTS | `FILE_IMPORT_TIMEOUT` | 60000 | 文件导入超时(ms) |
+| TIMEOUTS | `CANCEL_DETECTION_DELAY` | 50 | 取消检测延迟(ms) |
+| HISTORY | `DEFAULT_MAX_HISTORY` | 50 | 默认最大历史记录数 |
+| NODE | `PORT_VERTICAL_SPACING` | 28 | 垂直端口间距 |
+| TOOLTIP | `TOOLTIP_DELAY` | 300 | 普通提示延迟 |
+| TOOLTIP | `TOPBAR_TOOLTIP_DELAY` | 500 | 顶部栏提示延迟 |
 
 ---
 
@@ -78,50 +186,13 @@ interface EditorState {
 从 `src/registry/nodeTemplateRegistry` 导入：
 
 - **`getAllTemplates(): NodeTemplate[]`**  
-  获取当前所有节点模板（内置 + 自定义，自定义覆盖同类型内置模板）。
-
+  获取当前所有节点模板（内置 + 自定义）。
 - **`registerNodeTemplates(templates: NodeTemplate[]): () => void`**  
-  注册自定义节点模板（自动去重）。**返回清理函数**，调用后可移除本次注册的模板。
-
+  注册自定义节点模板，返回清理函数。
 - **`setBuiltInTemplates(templates: NodeTemplate[]): void`**  
-  完全替换内置模板，可用于打造专属节点库。
-
+  完全替换内置模板。
 - **`resetBuiltInTemplates(): void`**  
-  恢复内置模板为默认值（通常作为 Mod 清理函数的一部分）。
-
-- **`resetTemplates(): void`**  
-  重置自定义模板列表，恢复到仅内置模板。
-
-### 模板类型定义
-
-```typescript
-interface NodeTemplate {
-    type: string;
-    title: string;
-    category: string;
-    icon: string;
-    color: string;
-    styleClass?: string;
-    inputs?: PortDefinition[];
-    outputs?: PortDefinition[];
-    handles?: { sources?: PortDefinition[]; targets?: PortDefinition[] };
-    defaultData: Record<string, unknown>;
-    properties: Record<string, { type: string; default: unknown }>;
-    inlineControls?: InlineControl[];
-    defaultWidth?: number;
-    defaultHeight?: number;
-    // 动态端口（高级）
-    dynamicPorts?: (data: Record<string, unknown>) => { inputs?: PortDefinition[]; outputs?: PortDefinition[] };
-}
-
-interface PortDefinition {
-    id: string;
-    label: string;
-    type: 'number' | 'boolean' | 'exec' | '*';
-    position: 'left' | 'right' | 'top' | 'bottom';
-    style?: Record<string, unknown>;
-}
-```
+  恢复默认内置模板。
 
 ---
 
@@ -129,14 +200,9 @@ interface PortDefinition {
 
 从 `src/registry/edgeTemplateRegistry` 导入：
 
-- **`registerEdgeType(type: string, component: React.ComponentType<EdgeProps>): () => void`**  
-  注册自定义边组件，返回清理函数。
-
-- **`getEdgeTypeMap(): Record<string, React.ComponentType<EdgeProps>>`**  
-  获取所有边类型映射。
-
-- **`setDefaultEdgeComponent(component: React.ComponentType<EdgeProps>): void`**  
-  设置默认边组件。
+- **`registerEdgeType(type: string, component: React.ComponentType<EdgeProps>): () => void`**
+- **`getEdgeTypeMap(): Record<string, React.ComponentType<EdgeProps>>`**
+- **`setDefaultEdgeComponent(component: React.ComponentType<EdgeProps>): void`**
 
 ---
 
@@ -144,392 +210,90 @@ interface PortDefinition {
 
 从 `src/registry/controlComponentRegistry` 导入：
 
-- **`registerControlType(type: string, component: React.ComponentType<ControlComponentProps>): () => void`**  
-  注册自定义内联控件类型，返回清理函数。
-
-- **`getControlComponent(type: string): React.ComponentType<ControlComponentProps> | undefined`**  
-
-控件组件 Props：
-```typescript
-interface ControlComponentProps {
-  value: any;
-  onChange: (newValue: any) => void;
-  label?: string;
-  [key: string]: any;
-}
-```
+- **`registerControlType(type: string, component: React.ComponentType<ControlComponentProps>): () => void`**
+- **`getControlComponent(type: string): React.ComponentType<ControlComponentProps> | undefined`**
 
 ---
 
 ## 8. UI 扩展注册中心
 
-以下注册中心允许 Mod 动态扩展界面。**所有注册函数均返回一个清理函数，调用后可移除注册项。**
+所有注册中心均位于 `src/registry/`，每个注册函数返回清理函数。
 
-### 8.1 项目设置面板配置项
-从 `src/registry/projectConfigRegistry` 导入：
-- `registerProjectConfigField(field: ConfigField): () => void`
-- `getRegisteredConfigFields(): ConfigField[]`
-- `getDefaultConfigValues(): Record<string, any>`
-- `validateConfigValue(key: string, value: any): boolean`
-
-### 8.2 侧边栏
-从 `src/registry/sidebarRegistry` 导入：
-- `registerSidebarComponent(component: SidebarComponent): () => void`
-- `registerSidebarButton(button: SidebarButton): () => void`
-- `getSidebarComponents(): SidebarComponent[]`
-- `getSidebarButtons(): SidebarButton[]`
-- `updateComponentOrder(id: string, newOrder: number): void`（拖拽排序后调用）
-- `loadOrderFromLocalStorage(): void`（加载保存的顺序）
-
-### 8.3 顶部栏
-从 `src/registry/topBarRegistry` 导入：
-- `registerTopBarLeft(item: TopBarItem): () => void`
-- `registerTopBarCenter(item: TopBarItem): () => void`
-- `registerTopBarRight(item: TopBarItem): () => void`
-
-### 8.4 底部栏
-从 `src/registry/bottomBarRegistry` 导入：
-- `registerBottomBarLeft(item: BottomBarItem): () => void`
-- `registerBottomBarCenter(item: BottomBarItem): () => void`
-- `registerBottomBarRight(item: BottomBarItem): () => void`
-
-### 8.5 右键菜单项
-从 `src/registry/contextMenuRegistry` 导入：
-- `registerNodeMenuItem(item: MenuItem): () => void`
-- `registerPaneMenuItem(item: MenuItem): () => void`
-
-### 8.6 属性面板
-从 `src/registry/propsPanelRegistry` 导入：
-- `registerPropsPanelExtension(extension: PropsPanelExtension): () => void`
-- `registerPropsPanelComponent(component: PropsPanelComponent): () => void`
-
-### 8.7 浮动搜索过滤器
-从 `src/utils/searchExtensions` 导入：
-- `registerSearchFilter(filter: SearchFilter): () => void`
-
-### 8.8 批量连线端口匹配策略
-从 `src/registry/batchConnectStrategyRegistry` 导入：
-- `registerBatchConnectStrategy(strategy: BatchConnectStrategy, priority?: number): () => void`
-
-### 8.9 历史记录忽略事件
-从 `src/registry/historyIgnoreRegistry` 导入：
-- `registerHistoryIgnoredEventType(eventType: string): () => void`
-- `resetHistoryIgnoreRegistry(): void`
+| 注册中心 | 主要函数 | 说明 |
+|----------|----------|------|
+| `sidebarRegistry` | `registerSidebarComponent`, `registerSidebarButton` | 左侧栏组件/按钮 |
+| `topBarRegistry` | `registerTopBarLeft/Center/Right` | 顶部栏 |
+| `bottomBarRegistry` | `registerBottomBarLeft/Center/Right` | 底部栏 |
+| `contextMenuRegistry` | `registerNodeMenuItem`, `registerPaneMenuItem` | 右键菜单 |
+| `propsPanelRegistry` | `registerPropsPanelExtension`, `registerPropsPanelComponent` | 属性面板 |
+| `projectConfigRegistry` | `registerProjectConfigField` | 项目设置面板 |
+| `batchConnectStrategyRegistry` | `registerBatchConnectStrategy` | 批量连线端口匹配策略 |
+| `historyIgnoreRegistry` | `registerHistoryIgnoredEventType` | 历史记录忽略事件 |
+| `connectionRuleRegistry` | `registerConnectionRule`, `setConnectionRule` | 端口类型连接规则 |
 
 ---
 
-## 9. 扩展点管理器（ExtensionPoint）
-
-为统一所有注册中心的行为，项目提供了 `ExtensionManager` 类（`src/registry/ExtensionPoint.ts`）。
-
-```typescript
-export interface ExtensionPoint<T = any> {
-  id: string;
-  dependencies?: string[];
-  priority?: number;
-  activate: (context?: any) => T | void;
-  deactivate?: () => void;
-}
-
-export class ExtensionManager {
-  register(ext: ExtensionPoint): () => void;
-  getExtension(id: string): ExtensionPoint | undefined;
-  updatePriority(id: string, newPriority: number): boolean;
-  resolveOrder(): ExtensionPoint[];   // 拓扑排序 + 优先级排序
-  clear(): void;
-}
-```
-
-大多数注册中心内部已使用 `ExtensionManager`，你通常不需要直接操作它，但了解其机制有助于理解扩展点的依赖和优先级。
-
----
-
-## 10. 资源管理器（ResourceStore）
-
-用于管理节点中的大容量数据（纹理、音频、模型等），支持引用计数。
-
-从 `src/store/ResourceStore` 导入：
-
-```typescript
-export const ResourceStore: {
-  register(blob: Blob): string;                    // 注册资源，返回 ID
-  get(id: string): Blob | null;                    // 获取资源
-  retain(id: string): boolean;                     // 增加引用计数
-  release(id: string): boolean;                    // 减少引用计数，归零时删除
-  has(id: string): boolean;                        // 检查资源是否存在
-  snapshot(): Record<string, { size: number; refCount: number }>;
-  clear(): void;
-};
-```
-
-### 使用示例
-
-```typescript
-// 注册资源
-const blob = await fetch('/image.png').then(r => r.blob());
-const resId = ResourceStore.register(blob);
-
-// 在节点数据中存储资源 ID
-node.data._resources = [resId];
-
-// 获取资源并显示
-const imgBlob = ResourceStore.get(resId);
-const url = URL.createObjectURL(imgBlob);
-```
-
-**注意**：当节点被复制粘贴时，编辑器会自动调用 `retain`；当节点被删除时，会自动调用 `release`。你无需手动管理，除非直接操作资源。
-
----
-
-## 11. 历史记录存储接口（IHistoryStore）
-
-允许替换默认的历史记录实现。
-
-从 `src/history/HistoryStore` 导入：
-
-```typescript
-export interface IHistoryStore {
-  canUndo(): boolean;
-  canRedo(): boolean;
-  getPastCount(): number;
-  getFutureCount(): number;
-  recordState(state: EditorState): void;
-  undo(currentState: EditorState): EditorState | null;
-  redo(currentState: EditorState): EditorState | null;
-  clear(): void;
-}
-
-export class DefaultHistoryStore implements IHistoryStore {
-  constructor(maxHistory?: number);
-}
-
-// 替换历史存储
-import { setHistoryStore } from '../src/mods/mod-history';
-setHistoryStore(new DefaultHistoryStore(100));
-```
-
----
-
-## 12. 常用工具函数
+## 9. 常用工具函数
 
 从 `src/utils` 导入：
 
 - **`generateNodeId(): string`**  
-  生成唯一节点 ID（格式 `node_1`, `node_2` ...）。
-
 - **`generateEdgeId(): string`**  
-  生成唯一边 ID。
-
 - **`createNode(type: string, position?: { x: number; y: number }): CustomNode`**  
-  根据模板类型和坐标创建新节点。
-
 - **`syncIdCounter(nodes: { id: string }[]): void`**  
-  同步 ID 计数器，防止新建节点冲突。
-
-- **`exportWorkflow(nodes: any[], edges: any[]): void`**  
-  导出工作流为 JSON（底层函数）。
-
+- **`exportWorkflow(nodes: any[], edges: any[]): Promise<void>`**（异步）  
 - **`importWorkflow(): Promise<{ nodes: any[]; edges: any[] }>`**  
-  导入工作流（底层函数）。
 
 ---
 
-## 13. 可扩展的工具函数（供继承使用）
+## 10. 可扩展的工具函数（供继承使用）
 
-以下内置 Mod 导出了可复用的函数，你可以在自己的 Mod 中直接调用或包装它们：
-
-### `mod-node-lifecycle`
-```typescript
-export function createOnNodesChange(bus: EditorBus): (changes: any[]) => void;
-export function createOnEdgesChange(bus: EditorBus): (changes: any[]) => void;
-export function createOnConnect(bus: EditorBus): (connection: any) => void;
-export function createOnReconnect(bus: EditorBus): (oldEdge: any, newConnection: any) => void;
-```
-
-### `mod-connection-menu`
-```typescript
-export function createConnectionEndHandler(bus: EditorBus): (event: any, connectionState: any) => void;
-export function showConnectionMenu(bus: EditorBus, params: {...}): void;
-export function hideConnectionMenu(bus: EditorBus): void;
-```
-
-### `mod-canvas-context-menu`
-```typescript
-export function getContextMenuTarget(
-    screenX: number,
-    screenY: number,
-    screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number },
-    getIntersectingNodes: (rect: { x: number; y: number; width: number; height: number }) => Node[],
-    nodes: Node[]
-): ContextMenuTarget;
-```
-
-### `mod-floating-search`
-```typescript
-export function openSearch(bus: EditorBus, x: number, y: number): void;
-export function closeSearch(bus: EditorBus): void;
-```
-
-### `mod-workflow-io`
-```typescript
-export function setWorkflowIOHandlers(
-    exportHandler: (nodes: any[], edges: any[]) => void | Promise<void>,
-    importHandler: (bus: EditorBus) => void | Promise<void>
-): void;
-export function exportWorkflowData(nodes: any[], edges: any[]): Promise<void>;
-export function importWorkflowData(bus: EditorBus): Promise<void>;
-```
-
-### `mod-reconnect`
-```typescript
-export function isReconnecting(): boolean;
-export function validateReconnectConnection(connection: Connection, edges: Edge[], nodes: Node[]): boolean;
-```
-
-### `mod-history`
-```typescript
-export function setHistoryStore(store: IHistoryStore): void;
-```
+| Mod | 导出函数 |
+|-----|----------|
+| `mod-node-lifecycle` | `createOnNodesChange`, `createOnEdgesChange`, `createOnConnect`, `createOnReconnect` |
+| `mod-connection-menu` | `createConnectionEndHandler`, `showConnectionMenu`, `hideConnectionMenu` |
+| `mod-canvas-context-menu` | `getContextMenuTarget` |
+| `mod-floating-search` | `openSearch`, `closeSearch` |
+| `mod-workflow-io` | `setWorkflowIOHandlers`, `exportWorkflowData`, `importWorkflowData` |
+| `mod-reconnect` | `isReconnecting`, `validateReconnectConnection` |
+| `mod-history` | `setHistoryStore` |
 
 ---
 
-## 14. 端口类型兼容规则注册中心 API
+## 11. 端口类型连接规则 API
 
 从 `src/registry/connectionRuleRegistry` 导入：
 
 ```typescript
-export function registerConnectionRule(sourceType: string, allowedTargetTypes: string[]): void;
-export function setConnectionRule(sourceType: string, allowedTargetTypes: string[]): void;
-export function removeConnectionRule(sourceType: string, targetType?: string): void;
-export function getAllowedTargets(sourceType: string): ReadonlySet<string>;
-export function isValidConnectionType(sourceType: string, targetType: string): boolean;
-export function clearConnectionRules(): void;
-export function getConnectionRulesSnapshot(): Record<string, string[]>;
-```
-
-默认规则自动初始化：
-- `number` → `['number', 'boolean', '*']`
-- `boolean` → `['boolean', 'number', '*']`
-- `exec` → `['exec', '*']`
-- `*` → `['number', 'boolean', 'exec', '*']`
-
----
-
-## 15. Mod 编写模式示例
-
-### 15.1 订阅事件并执行副作用
-```typescript
-export const myMod: EditorMod = {
-    id: 'my-mod',
-    init(bus) {
-        const unsub = bus.subscribe(({ event, state }) => {
-            if (event.type === 'NODE_ADDED') {
-                console.log('新节点：', event.node.id);
-            }
-        });
-        return () => unsub();
-    }
-};
-```
-
-### 15.2 主动派发事件
-```typescript
-bus.dispatch({ type: 'SELECTION_CHANGED', nodeIds: ['node_1', 'node_2'] });
-bus.dispatch({ type: 'AUTO_LAYOUT', options: { horizontalSpacing: 300, verticalSpacing: 180 } });
-bus.dispatch({ type: 'FIT_VIEW', options: { padding: 0.1, duration: 300 } });
-```
-
-### 15.3 注册自定义节点模板（带清理）
-```typescript
-import { registerNodeTemplates } from '../src/registry/nodeTemplateRegistry';
-
-export const myTemplateMod: EditorMod = {
-    id: 'my-templates',
-    init() {
-        const unregister = registerNodeTemplates([myNodeTemplate]);
-        return unregister;   // Mod 卸载时自动移除模板
-    }
-};
-```
-
-### 15.4 注册自定义边类型
-```typescript
-import { registerEdgeType } from '../src/registry/edgeTemplateRegistry';
-
-export const myEdgeMod: EditorMod = {
-    id: 'my-edges',
-    init() {
-        const unregister = registerEdgeType('dashed', DashedEdge);
-        return unregister;
-    }
-};
-```
-
-### 15.5 使用资源管理器
-```typescript
-import { ResourceStore } from '../src/store/ResourceStore';
-
-const blob = await fetch('/texture.png').then(r => r.blob());
-const resId = ResourceStore.register(blob);
-// 将 resId 存储到节点 data._resources
-```
-
-### 15.6 替换历史记录实现
-```typescript
-import { setHistoryStore } from '../src/mods/mod-history';
-import { DefaultHistoryStore } from '../src/history';
-
-setHistoryStore(new DefaultHistoryStore(200));
+registerConnectionRule(sourceType: string, allowedTargetTypes: string[]): void;
+setConnectionRule(sourceType: string, allowedTargetTypes: string[]): void;
+removeConnectionRule(sourceType: string, targetType?: string): void;
+getAllowedTargets(sourceType: string): ReadonlySet<string>;
+isValidConnectionType(sourceType: string, targetType: string): boolean;
+clearConnectionRules(): void;
 ```
 
 ---
 
-## 16. 防御降级机制
+## 12. 重要注意事项
 
-当自定义 Mod 在 `init` 中抛出异常时，系统会：
-- 输出红色错误日志。
-- 如果存在同名的内置 Mod，自动回退并初始化内置版本（输出黄色警告）。
-- 继续初始化其他 Mod，不影响整体功能。
-
-因此，即使你编写的 Mod 有 bug，编辑器依然可运行。
-
----
-
-## 17. 重要注意事项
-
-- Mod 的 `id` 必须全局唯一，建议使用命名空间（如 `'my-plugin-logger'`）。
-- `init` 函数中返回的清理函数用于移除事件监听、定时器等，避免内存泄漏。
-- 事件驱动是核心，尽量通过 `dispatch` 改变状态，不要直接操作 DOM 或 React 状态。
-- 节点模板注册中心会自动去重，多次注册同类型模板不会重复。
-- 若要覆盖内置模板，使用 `setBuiltInTemplates` 并记得在清理时恢复。
-- 所有事件定义见 `src/bus/types.ts`，可随时查阅最新完整列表。
-- 注册中心注册的函数建议保存返回的清理函数，在 Mod 卸载时调用，避免内存泄漏。
-- 对于大容量数据，使用 `ResourceStore` 管理，不要直接嵌入节点数据。
-- 如需自定义历史记录行为，可使用 `setHistoryStore` 替换实现。
+- **动态端口**：端口 ID 不能与静态端口重复；`dynamicPortsDeps` 应精确声明依赖，避免性能问题。
+- **资源管理**：不要将 Blob 直接存入 `data`，应使用 `ResourceStore`。粘贴和删除会自动管理引用计数，无需手动处理。
+- **导入导出钩子**：钩子顺序执行，建议保持轻量，避免长时间阻塞。
+- **确认辅助函数**：使用 `window.confirm` 会阻塞 UI，适合简单确认；如需自定义模态框，可自行实现。
+- **数字配置**：修改 `config/numbers.ts` 后需重启开发服务器。
 
 ---
 
-## 附录：常用 NodeTemplate 示例
+## 附录：示例 Mod 快速参考
 
-```typescript
-{
-    type: 'adder',
-    title: '加法器',
-    category: '运算',
-    icon: '➕',
-    color: '#E63946',
-    inputs: [
-        { id: 'a', label: 'A', position: 'left', type: 'number' },
-        { id: 'b', label: 'B', position: 'left', type: 'number' }
-    ],
-    outputs: [{ id: 'sum', label: '和', position: 'right', type: 'number' }],
-    defaultData: { value: 0, label: '加法器' },
-    properties: { value: { type: 'number', default: 0 } },
-    inlineControls: [
-        { key: 'mode', type: 'select-dropdown', label: '模式', options: ['A+B', 'A-B'], default: 'A+B' }
-    ]
-}
-```
+| 示例 Mod | 关键 API 演示 |
+|----------|---------------|
+| `logger-node-mod.ts` | `registerNodeTemplates`, 内联控件 |
+| `dynamic-output-mod.ts` | `dynamicPorts`, `dynamicPortsDeps` |
+| `confirm-delete-mod.ts` | `dispatchConfirmable`, `registerNodeMenuItem` |
+| `timestamp-hook-mod.ts` | `registerBeforeExportHook`, `registerAfterImportHook` |
+| `image-node-mod.ts` | `ResourceStore`, 节点添加监听 |
+| `export-svg-mod.ts` | `registerPaneMenuItem`, 自定义事件 |
 
-更多端口定义和控件配置请参考 `NODE_TEMPLATE_API.md`。
-```
+完整代码见 `custom-mods/` 目录。

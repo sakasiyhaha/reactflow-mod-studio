@@ -1,6 +1,6 @@
 // src/components/Tooltip.tsx
 // 自定义 Tooltip 组件，支持深色主题，悬浮显示提示文本
-
+import { TOOLTIP } from '../../config/numbers';
 import React, { useState, useRef, useEffect, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -11,7 +11,7 @@ interface TooltipProps {
   delay?: number;         // 显示延迟（毫秒）
 }
 
-const Tooltip: React.FC<TooltipProps> = ({ children, content, position = 'top', delay = 300 }) => {
+const Tooltip: React.FC<TooltipProps> = ({ children, content, position = 'top', delay = TOOLTIP.TOOLTIP_DELAY }) => {
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const childRef = useRef<HTMLDivElement>(null);

@@ -1,8 +1,8 @@
 // constants/editor.ts
-
+import { HISTORY } from '../config/numbers';
 // 默认最大历史记录数
-const DEFAULT_MAX_HISTORY = 50;
-
+const DEFAULT_MAX_HISTORY = HISTORY.DEFAULT_MAX_HISTORY;
+const MAX_HISTORY_LIMIT = HISTORY.MAX_HISTORY_LIMIT;
 /**
  * 获取当前最大历史记录数（优先使用 localStorage 中存储的值）
  */
@@ -11,7 +11,7 @@ export function getMaxHistory(): number {
     const saved = localStorage.getItem('editor_max_history');
     if (saved !== null) {
       const num = parseInt(saved, 10);
-      if (!isNaN(num) && num >= 1 && num <= 200) {
+      if (!isNaN(num) && num >= 1 && num <= MAX_HISTORY_LIMIT) {
         return num;
       }
     }

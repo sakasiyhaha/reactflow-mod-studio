@@ -5,11 +5,11 @@
 //   1. 节点自身的 width/height 属性（React Flow 测量值）
 //   2. 节点 data 中的 __templateDefaultWidth / __templateDefaultHeight（模板默认值）
 //   3. 全局默认值（DEFAULT_NODE_WIDTH / DEFAULT_NODE_HEIGHT）
-
+import { LAYOUT } from '../../config/numbers';
 import type { CustomNode } from './types';
 import { DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT } from '../../config/editorConfig';
 
-const MIN_GAP = 20; // 节点之间的最小间距
+const MIN_GAP = LAYOUT.MIN_ALIGN_GAP; // 节点之间的最小间距
 
 /**
  * 获取节点宽度

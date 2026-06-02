@@ -1,6 +1,6 @@
 // src/components/GenericNode.tsx
-import { memo, Fragment, useCallback } from 'react';
-import { Handle, Position, useStore, useNodeId } from '@xyflow/react';
+import { memo, Fragment, useCallback, useMemo, useRef, useEffect } from 'react';
+import { Handle, Position, useStore, useNodeId, useUpdateNodeInternals } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import NodeControls from './NodeControls';
 import { useEditorBusContext } from '../bus/EditorBusContext';
@@ -8,7 +8,7 @@ import { getAllTemplates } from '../registry/nodeTemplateRegistry';
 import type { CustomNode } from '../utils/types';
 import { useHandleStyles } from '../hooks/useHandleStyles';
 import { DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT } from '../../config/editorConfig';
-
+import { LAYOUT, NODE } from '../../config/numbers';
 const positionMap: Record<string, Position> = {
     top: Position.Top,
     right: Position.Right,
@@ -35,6 +35,7 @@ const getNodeHeight = (state: any, id: string) => {
 
 const GenericNode = memo(({ data, id }: NodeProps<CustomNode>) => {
     const bus = useEditorBusContext();
+    const updateNodeInternals = useUpdateNodeInternals();
 
     // 使用精确订阅，避免全量 nodes 数组遍历
     const nodeWidth = useStore(useCallback(state => getNodeWidth(state, id), [id]));
@@ -61,10 +62,74 @@ const GenericNode = memo(({ data, id }: NodeProps<CustomNode>) => {
         icon = '📦',
         styleClass = '',
         inlineControls,
+        dynamicPorts,
+        dynamicPortsDeps,
     } = template;
 
-    const sources = template.handles?.sources ?? template.outputs ?? [];
-    const targets = template.handles?.targets ?? template.inputs ?? [];
+    // ---------- 动态端口计算 ----------
+    // 确定依赖字段列表
+    const depsFields = dynamicPortsDeps ? dynamicPortsDeps(data) : Object.keys(data);
+    // 提取依赖字段的值（用于 useMemo 依赖）
+    const depValues = depsFields.map(field => data[field]);
+
+    // 使用 JSON.stringify 将依赖值数组序列化，避免因数组引用变化而误触发
+    // 注意：如果依赖字段中包含对象/数组，此方法可能无法深度比较，但对于简单类型足够
+    const depKey = useMemo(() => JSON.stringify(depValues), [depValues]);
+
+    // 计算动态端口（仅当模板提供了 dynamicPorts 时才计算）
+    const dynamicPortsResult = useMemo(() => {
+        if (!dynamicPorts) return null;
+        // 注意：depKey 的变化代表依赖字段值确实发生了变化，因此重新调用 dynamicPorts
+        const result = dynamicPorts(data);
+        if (import.meta.env.DEV && result) {
+            console.log(`[GenericNode] 节点 ${id} 重新计算动态端口`, {
+                deps: depsFields,
+                values: depValues,
+                inputs: result.inputs?.length ?? 0,
+                outputs: result.outputs?.length ?? 0,
+            });
+        }
+        return result;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dynamicPorts, data, depKey, id]);
+
+    // 合并静态端口与动态端口
+    const staticInputs = template.inputs ?? [];
+    const dynamicInputs = dynamicPortsResult?.inputs ?? [];
+    const finalInputs = useMemo(
+        () => [...staticInputs, ...dynamicInputs],
+        [staticInputs, dynamicInputs]
+    );
+
+    const staticOutputs = template.outputs ?? [];
+    const dynamicOutputs = dynamicPortsResult?.outputs ?? [];
+    const finalOutputs = useMemo(
+        () => [...staticOutputs, ...dynamicOutputs],
+        [staticOutputs, dynamicOutputs]
+    );
+
+    // 监听端口列表变化，刷新 React Flow 内部布局
+    const prevInputsRef = useRef<typeof finalInputs>(finalInputs);
+    const prevOutputsRef = useRef<typeof finalOutputs>(finalOutputs);
+    useEffect(() => {
+        const inputsChanged = JSON.stringify(prevInputsRef.current) !== JSON.stringify(finalInputs);
+        const outputsChanged = JSON.stringify(prevOutputsRef.current) !== JSON.stringify(finalOutputs);
+        if (inputsChanged || outputsChanged) {
+            if (import.meta.env.DEV) {
+                console.log(`[GenericNode] 节点 ${id} 端口结构变化，刷新内部布局`, {
+                    inputs: finalInputs.length,
+                    outputs: finalOutputs.length,
+                });
+            }
+            updateNodeInternals(id);
+            prevInputsRef.current = finalInputs;
+            prevOutputsRef.current = finalOutputs;
+        }
+    }, [finalInputs, finalOutputs, id, updateNodeInternals]);
+
+    // ---------- 以下为原有渲染逻辑，使用 finalInputs / finalOutputs 替代原来的 template.inputs/outputs ----------
+    const sources = finalOutputs;
+    const targets = finalInputs;
 
     const displayValue = data.value ?? Object.values(data).find(
         (v) => typeof v === 'number' || typeof v === 'string'
@@ -108,8 +173,8 @@ const GenericNode = memo(({ data, id }: NodeProps<CustomNode>) => {
         handleGroups[2].targets.length + handleGroups[2].sources.length,
         handleGroups[3].targets.length + handleGroups[3].sources.length
     );
-    const minHeight = maxVerticalHandles > 1 ? maxVerticalHandles * 28 + 40 : undefined;
-    const minWidth = maxHorizontalHandles > 1 ? maxHorizontalHandles * 28 + 80 : undefined;
+    const minHeight = maxVerticalHandles > 1 ? maxVerticalHandles * NODE.PORT_VERTICAL_SPACING + NODE.PORT_VERTICAL_SPACING + 12 : undefined;
+    const minWidth = maxHorizontalHandles > 1 ? maxHorizontalHandles * NODE.PORT_VERTICAL_SPACING + NODE.PORT_HORIZONTAL_EXTRA_WIDTH : undefined;
 
     const borderColor = isLocked ? '#555' : color;
 
@@ -152,7 +217,7 @@ const GenericNode = memo(({ data, id }: NodeProps<CustomNode>) => {
 
                 return (
                     <Fragment key={position}>
-                        {targets.map((t) => {
+                        {targets.map((t, idx) => {
                             const globalIndex = allPorts.findIndex(p => p.id === t.id && p.kind === 'target');
                             const handleStyle = useHandleStyles({
                                 nodeId: id,
@@ -160,7 +225,7 @@ const GenericNode = memo(({ data, id }: NodeProps<CustomNode>) => {
                                 type: 'target',
                                 nodeWidth,
                                 nodeHeight,
-                                index: globalIndex,
+                                index: globalIndex === -1 ? idx : globalIndex,
                                 total,
                             });
                             const portColor = t.type === 'exec' ? '#f56565' : '#4299e1';
@@ -180,7 +245,7 @@ const GenericNode = memo(({ data, id }: NodeProps<CustomNode>) => {
                                 />
                             );
                         })}
-                        {sources.map((s) => {
+                        {sources.map((s, idx) => {
                             const globalIndex = allPorts.findIndex(p => p.id === s.id && p.kind === 'source');
                             const handleStyle = useHandleStyles({
                                 nodeId: id,
@@ -188,7 +253,7 @@ const GenericNode = memo(({ data, id }: NodeProps<CustomNode>) => {
                                 type: 'source',
                                 nodeWidth,
                                 nodeHeight,
-                                index: globalIndex,
+                                index: globalIndex === -1 ? idx : globalIndex,
                                 total,
                             });
                             const portColor = s.type === 'exec' ? '#f56565' : '#48bb78';

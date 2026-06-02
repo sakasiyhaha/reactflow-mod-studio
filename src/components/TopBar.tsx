@@ -2,7 +2,7 @@
 // 顶部栏组件 —— 动态渲染注册的左/中/右区域项目
 // 支持下拉菜单，使用 Portal 避免被画布遮挡
 // 所有按钮使用自定义 Tooltip 组件，替代原生 title
-
+import { TOOLTIP } from '../../config/numbers';
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditorBusContext } from '../bus/EditorBusContext';
@@ -22,7 +22,7 @@ const StandardButton: React.FC<{ item: TopBarItem; onClick: () => void; disabled
   const { label, icon, shortcut } = item;
   const tooltipText = shortcut ? `${label} (${shortcut})` : label;
   return (
-    <Tooltip content={tooltipText} position="bottom" delay={500}>
+    <Tooltip content={tooltipText} position="bottom" delay={TOOLTIP.TOPBAR_TOOLTIP_DELAY}>
       <button
         className="top-bar-btn"
         onClick={onClick}
@@ -245,7 +245,7 @@ const TopBar: React.FC = () => {
               )}
             </>
           ) : (
-            <Tooltip content={item.label || ''} position="bottom" delay={500}>
+            <Tooltip content={item.label || ''} position="bottom" delay={TOOLTIP.TOPBAR_TOOLTIP_DELAY}>
               <button
                 ref={(el) => { if (el) buttonRefs.current.set(item.id, el); }}
                 className="top-bar-btn"

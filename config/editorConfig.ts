@@ -3,12 +3,12 @@ import GenericNode from '../src/components/GenericNode';
 import { getAllTemplates } from '../src/registry/nodeTemplateRegistry';
 import { getEdgeTypeMap } from '../src/registry/edgeTemplateRegistry';
 import type { NodeTypes, EdgeTypes } from '@xyflow/react';
-
+import { LAYOUT } from './numbers';
 /**
  * 全局默认节点尺寸（当模板未指定 defaultWidth/defaultHeight 时使用）
  */
-export const DEFAULT_NODE_WIDTH = 160;
-export const DEFAULT_NODE_HEIGHT = 60;
+export const DEFAULT_NODE_WIDTH = LAYOUT.DEFAULT_NODE_WIDTH;
+export const DEFAULT_NODE_HEIGHT = LAYOUT.DEFAULT_NODE_HEIGHT;
 
 /**
  * 动态获取当前所有节点类型到组件的映射

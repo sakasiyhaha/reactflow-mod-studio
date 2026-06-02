@@ -2,6 +2,8 @@
 
 本文档详细说明节点模板（`NodeTemplate`）的输入 / 输出端口定义方式、如何通过注册中心动态添加或修改模板、端口在组件中的渲染逻辑，以及连接校验和反向连接菜单的工作原理。
 
+**最新更新**：动态端口（Dynamic Ports）、资源外部化（`_resources`）、端口偏移可调、自定义端口类型规则。
+
 ---
 
 ## 1. 端口数据结构
@@ -60,13 +62,55 @@ export type BuiltInPortType = 'number' | 'boolean' | 'exec' | '*';
 
 ---
 
-## 3. 资源外部化与 `_resources` 字段
+## 3. 动态端口（Dynamic Ports）
+
+允许节点根据自身数据动态增减输入/输出端口，适用于条件分支、可变参数等场景。
+
+### 定义动态端口
+
+在模板中添加 `dynamicPorts` 和可选的 `dynamicPortsDeps`：
+
+```typescript
+{
+    type: 'dynamicOutput',
+    title: '动态输出',
+    category: '演示',
+    icon: '🔌',
+    color: '#8B5CF6',
+    inputs: [],
+    outputs: [ /* 静态输出 */ ],
+    defaultData: { enableExtra: false },
+    inlineControls: [
+        { key: 'enableExtra', type: 'boolean-toggle', label: '启用额外输出' }
+    ],
+    dynamicPorts: (data) => {
+        if (data.enableExtra) {
+            return {
+                outputs: [{ id: 'extra_out', label: '额外输出', type: 'number', position: 'right' }]
+            };
+        }
+        return {};
+    },
+    dynamicPortsDeps: (data) => ['enableExtra']  // 仅当 enableExtra 变化时重新计算
+}
+```
+
+### 注意事项
+
+- 动态端口与静态端口合并（`[...staticInputs, ...dynamicInputs]`）。若 `id` 冲突，动态端口会覆盖静态端口。
+- `dynamicPortsDeps` 若不提供，默认使用 `Object.keys(data)` 作为依赖（监听所有顶层字段），可能导致性能问题。建议精确声明。
+- 开发环境下，端口变化时会打印日志，便于调试。
+- 动态端口变化时，组件会自动调用 `updateNodeInternals` 刷新 React Flow 布局。
+
+---
+
+## 4. 资源外部化与 `_resources` 字段
 
 当节点需要引用外部资源（如纹理图片、音频文件、模型数据）时，应通过 `ResourceStore` 管理资源，并在节点数据中存储资源 ID 列表，而不是将资源数据直接存储在节点中。
 
 ### 在模板中声明资源引用
 
-节点数据中的 `_resources` 字段用于存储资源 ID 列表（字符串数组）。你可以在模板的 `defaultData` 中初始化为空数组：
+节点数据中的 `_resources` 字段用于存储资源 ID 列表（字符串数组）。可以在 `defaultData` 中初始化为空数组：
 
 ```typescript
 {
@@ -109,80 +153,7 @@ newNode.data.url = URL.createObjectURL(ResourceStore.get(resourceId));
 
 ---
 
-## 4. 动态端口（根据节点数据动态增减端口）
-
-模板中可以定义 `dynamicPorts` 函数，根据节点数据动态生成端口列表。这对于条件分支、可变参数等场景非常有用。
-
-### 定义动态端口
-
-```typescript
-{
-    type: 'if',
-    title: '条件分支',
-    category: '逻辑',
-    icon: '🔀',
-    color: '#9C89B8',
-    inputs: [
-        { id: 'cond', label: '条件', type: 'boolean', position: 'left' }
-    ],
-    outputs: [], // 静态端口为空，动态提供
-    defaultData: { condition: false },
-    properties: { condition: { type: 'boolean', default: false } },
-    inlineControls: [
-        { key: 'condition', type: 'boolean-toggle', label: '条件' }
-    ],
-    dynamicPorts: (data) => ({
-        outputs: [
-            { id: 'true', label: 'True', type: 'exec', position: 'right' },
-            { id: 'false', label: 'False', type: 'exec', position: 'right' }
-        ]
-    })
-}
-```
-
-### 动态端口与静态端口合并
-
-`dynamicPorts` 返回的端口会与模板中静态定义的 `inputs`/`outputs` 合并。如果动态端口返回的端口 ID 与静态端口冲突，静态端口会被覆盖（不推荐）。
-
-### 注意事项
-
-- `dynamicPorts` 函数会在节点数据变化时重新调用，因此应避免在其中执行昂贵计算。
-- 端口数量变化时，React Flow 会自动重新计算节点布局。
-- 动态端口目前需要谨慎使用（避免无限循环），建议只依赖节点数据中的关键字段变化来触发端口更新。
-
----
-
-## 5. 端口在组件中的渲染
-
-所有节点都使用通用组件 `GenericNode`（`src/components/GenericNode.tsx`）渲染。它会遍历模板的输入 / 输出端口，生成对应的 React Flow `Handle`。
-
-**输入端口渲染片段**：
-
-```typescript
-const targets = template.handles?.targets ?? template.inputs ?? [];
-targets.map((t, idx) => (
-    <Handle
-        key={`target-${t.id}`}
-        type="target"             // React Flow 中 target 表示输入
-        position={Position.Left}  // 默认左侧，也会根据 positionMap 匹配
-        id={t.id}                 // 端口 ID，连线时需要
-        style={{
-            background: portColor,
-            ...(t.style ?? {}),
-            ...handleStyle,       // 动态样式（偏移、位置百分比等）
-        }}
-        data-tooltip={tooltipText}
-    />
-))
-```
-
-**输出端口同理**，将 `type` 设为 `"source"`，并根据端口位置动态分配到对应边缘。
-
-节点还会自动根据端口数量计算最小高度 / 宽度，确保所有端口都能均匀分布在对应边缘上。
-
----
-
-## 6. 端口偏移配置（动态可调）
+## 5. 端口偏移配置（动态可调）
 
 端口相对于节点边缘的偏移距离可通过 CSS 变量 `--handle-offset-distance` 动态调整。默认值为 `7px`，你可以通过派发 `SET_THEME_COLOR` 事件来修改：
 
@@ -203,27 +174,7 @@ bus.dispatch({
 
 ---
 
-## 7. 连接校验中的端口类型获取
-
-在 `src/mods/mod-reconnect.ts` 中，`getPortType` 函数根据端口 ID 和方向获取端口数据类型，用于校验连接是否合法。
-
-```typescript
-function getPortType(nodes, nodeId, handleId, handleKind): string | null {
-    const node = nodes.find(n => n.id === nodeId);
-    const template = getAllTemplates().find(t => t.type === node.type);
-    const ports = handleKind === 'source'
-        ? (template.handles?.sources ?? template.outputs ?? [])
-        : (template.handles?.targets ?? template.inputs ?? []);
-    const port = ports.find(p => p.id === handleId);
-    return port?.type ?? null;   // 返回端口数据类型，用于规则匹配
-}
-```
-
-结合 `connectionRules.ts` 中的兼容表判断连接是否允许。
-
----
-
-## 8. 自定义端口类型连接规则
+## 6. 自定义端口类型连接规则
 
 当你使用自定义端口类型（如 `item_ref`）时，需要通过注册中心告诉编辑器该类型可以连接哪些其他类型。
 
@@ -251,29 +202,7 @@ removeConnectionRule('item_ref', '*');
 
 ---
 
-## 9. 从输入端口拖线（反向连接）
-
-当你从输入端口拖线到空白区域时，系统会弹出反向连接菜单，帮助你快速创建能连接到该输入端口的节点。
-
-在 `mod-connection-menu.ts` 中：
-
-```typescript
-const targetPort = sourceTemplate.inputs?.find(i => i.id === fromHandle.id);
-if (targetPort?.type) {
-    const available = targetPort.type === '*'
-        ? getAllTemplates().filter(t => t.outputs?.length > 0)
-        : getAllTemplates().filter(t =>
-            t.outputs?.some(o => o.type === targetPort.type || o.type === '*')
-        );
-    // 显示方向为 'reverse' 的菜单，选择后创建新节点并自动连线
-}
-```
-
-这样，新节点将作为数据源，其输出端口连向拖拽的输入端口，实现快速搭建工作流。
-
----
-
-## 10. 内联控件（Inline Controls）
+## 7. 内联控件（Inline Controls）
 
 模板中可以定义 `inlineControls` 数组，用于在节点内部直接渲染可交互控件（步进器、开关、下拉选择），无需打开属性面板。
 
@@ -285,7 +214,7 @@ inlineControls: [
 ]
 ```
 
-每个控件对应节点数据中的一个字段（`key`），修改时自动派发 `NODE_DATA_CHANGED` 事件并传播 `value` 到下游（如果 `propagate` 未禁用）。
+每个控件对应节点数据中的一个字段（`key`），修改时自动派发 `NODE_DATA_CHANGED` 事件。
 
 ### 注册自定义控件类型
 
@@ -312,7 +241,7 @@ registerControlType('slider', Slider);
 
 ---
 
-## 11. 端口样式高级定制
+## 8. 端口样式高级定制
 
 每个端口可以单独设置 `style` 字段（CSS 样式对象）。例如，改变特定端口的颜色或形状：
 
@@ -332,7 +261,7 @@ inputs: [
 
 ---
 
-## 12. 节点尺寸与端口位置自适应
+## 9. 节点尺寸与端口位置自适应
 
 节点会测量自身的实际宽高（通过 `measured` 属性），并根据端口数量动态调整最小高度/宽度，确保所有端口都能均匀分布在对应边缘上。这一逻辑在 `GenericNode.tsx` 中实现：
 
@@ -348,63 +277,81 @@ const minHeight = maxVerticalHandles > 1 ? maxVerticalHandles * 28 + 40 : undefi
 
 ---
 
-## 13. 完整示例：自定义节点模板 Mod
+## 10. 完整示例：动态端口节点（从模板到注册）
 
-将以下代码保存为 `custom-mods/my-custom-nodes.ts`，并在 `custom-mods/index.ts` 中注册，即可添加一个具有自定义输入/输出端口的节点。
+**步骤 1：定义模板**
 
 ```typescript
-import type { EditorMod } from '../src/bus/types';
-import { registerNodeTemplates } from '../src/registry/nodeTemplateRegistry';
-import type { NodeTemplate } from '../src/nodeTemplates';
-
-const myTemplates: NodeTemplate[] = [
-    {
-        type: 'myProcessor',
-        title: '我的处理器',
-        category: '自定义',
-        icon: '⚙️',
-        color: '#2C3E50',
-        inputs: [
-            { id: 'dataIn', label: '数据输入', type: 'number', position: 'left' },
-            { id: 'control', label: '控制信号', type: 'boolean', position: 'top' }
-        ],
-        outputs: [
-            { id: 'result', label: '处理结果', type: 'number', position: 'right' },
-            { id: 'status', label: '状态码', type: 'number', position: 'right' }
-        ],
-        defaultData: { value: 0, label: '处理器' },
-        properties: {
-            value: { type: 'number', default: 0 },
-            label: { type: 'string', default: '处理器' }
+// custom-mods/my-dynamic-node.ts
+const myDynamicNode: NodeTemplate = {
+    type: 'myDynamic',
+    title: '动态端口示例',
+    category: '演示',
+    icon: '🔧',
+    color: '#10B981',
+    inputs: [{ id: 'in', label: '输入', type: 'number', position: 'left' }],
+    outputs: [{ id: 'out', label: '主输出', type: 'number', position: 'right' }],
+    defaultData: { extra: false },
+    properties: { extra: { type: 'boolean', default: false } },
+    inlineControls: [
+        { key: 'extra', type: 'boolean-toggle', label: '启用额外输出' }
+    ],
+    dynamicPorts: (data) => {
+        if (data.extra) {
+            return {
+                outputs: [{ id: 'extra_out', label: '额外输出', type: 'number', position: 'right' }]
+            };
         }
-    }
-];
+        return {};
+    },
+    dynamicPortsDeps: (data) => ['extra']
+};
+```
 
-export const myCustomNodeMod: EditorMod = {
-    id: 'my-custom-node',
+**步骤 2：注册模板**
+
+```typescript
+import { registerNodeTemplates } from '../src/registry/nodeTemplateRegistry';
+
+export const myDynamicNodeMod: EditorMod = {
+    id: 'my-dynamic-node',
     init() {
-        const unregister = registerNodeTemplates(myTemplates);
-        // 可选：返回清理函数，在 Mod 卸载时移除自定义模板
+        const unregister = registerNodeTemplates([myDynamicNode]);
         return unregister;
     }
 };
 ```
 
-注册后，左侧节点库“自定义”分类下会出现**我的处理器**节点，它有两个输入端口和两个输出端口，可以在画布上正常连接、移动、编辑属性。
+**步骤 3：测试**
+- 拖入节点，默认只有“主输出”。
+- 点击内联开关“启用额外输出”，节点应动态增加“额外输出”端口，无卡死。
 
 ---
 
-## 14. 总结
+## 11. 常见问题
 
-- 节点端口的全部信息均来自 `NodeTemplate` 的 `inputs` / `outputs` 或 `handles` 字段。
-- 通过 `registerNodeTemplates` 可轻松添加自定义端口配置，该函数返回清理函数，便于 Mod 卸载时移除模板。
-- `GenericNode` 会自动渲染这些端口，无需修改渲染代码。
-- 连接校验和反向连接菜单均依赖端口类型进行过滤。
-- 充分利用 `'*'` 通配符可以创建灵活的通用端口。
-- 内联控件提供了更便捷的交互方式，且支持扩展新控件类型。
-- 端口偏移距离可通过 CSS 变量动态调整，实现主题自定义。
-- 大容量资源应通过 `ResourceStore` 管理，存储在节点 `_resources` 字段中。
-- 动态端口可根据节点数据动态增减端口，实现条件分支等高级功能。
+**Q: 动态端口导致节点频繁闪烁？**  
+A: 检查 `dynamicPortsDeps` 是否声明了正确的依赖字段。若未声明，则每次 `data` 的任何变化都会重新计算端口。
 
-> 更多信息可参阅 `src/nodeTemplates.ts`（类型定义）、`src/registry/nodeTemplateRegistry.ts`（注册中心）以及 `CUSTOM_MODS.md`（Mod 开发指南）。
-```
+**Q: 资源节点导出后导入不显示图片？**  
+A: 导入后资源 ID 会变化，节点中的 `imageUrl` 可能仍是旧的 ObjectURL。解决方法：在 `afterImport` 钩子中遍历资源节点，使用新的资源 ID 重新生成 ObjectURL 并更新节点数据。
+
+**Q: 端口偏移距离不起作用？**  
+A: 确认是否通过 `bus.dispatch` 设置了 `--handle-offset-distance` 变量，且值有效（如 `12px`）。也可在 CSS 中直接覆盖。
+
+**Q: 如何让节点支持动态增减输入端口？**  
+A: 方法与输出端口相同，只需在 `dynamicPorts` 返回 `inputs` 数组即可。
+
+---
+
+## 12. 总结
+
+- 节点端口的全部信息来自 `NodeTemplate` 的 `inputs` / `outputs` 及 `dynamicPorts`。
+- 通过 `registerNodeTemplates` 可添加自定义模板，返回清理函数。
+- `GenericNode` 自动渲染端口，支持静态+动态合并。
+- 使用 `dynamicPortsDeps` 精确控制依赖，避免性能问题。
+- 大容量资源通过 `ResourceStore` 管理，存储在 `_resources` 中。
+- 端口偏移距离可通过 CSS 变量动态调整。
+- 自定义端口类型需注册连接规则。
+
+更多信息可参阅 `src/nodeTemplates.ts`（类型定义）、`src/registry/nodeTemplateRegistry.ts`（注册中心）以及 `CUSTOM_MODS.md`（Mod 开发指南）。

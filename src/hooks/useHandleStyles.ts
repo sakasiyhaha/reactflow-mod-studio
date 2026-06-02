@@ -1,4 +1,5 @@
 // src/hooks/useHandleStyles.ts
+import { NODE } from '../../config/numbers';
 export type HandlePosition = 'top' | 'bottom' | 'left' | 'right';
 export type HandleType = 'source' | 'target';
 
@@ -31,7 +32,7 @@ export interface HandleStyle {
  * 可通过派发 SET_THEME_COLOR 事件修改：bus.dispatch({ type: 'SET_THEME_COLOR', payload: { variable: '--handle-offset-distance', value: '10px' } })
  */
 function getOutwardDistance(): number {
-  if (typeof document === 'undefined') return 7;
+  if (typeof document === 'undefined') return NODE.DEFAULT_HANDLE_OFFSET;
   const computed = getComputedStyle(document.documentElement);
   const cssValue = computed.getPropertyValue('--handle-offset-distance');
   if (cssValue) {
