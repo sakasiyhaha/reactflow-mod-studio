@@ -2,6 +2,7 @@
 // 项目设置面板配置项注册中心
 // 允许 Mod 动态添加自定义配置字段
 // 已改造为使用 ExtensionPoint 管理
+// 新增：helperText 字段，用于显示配置项的帮助提示
 
 import type { ComponentType } from 'react';
 import { ExtensionPoint, ExtensionManager } from './ExtensionPoint';
@@ -18,6 +19,8 @@ export interface ConfigField {
   validate?: (value: any) => boolean;
   component?: ComponentType<{ value: any; onChange: (val: any) => void }>;
   order?: number;
+  /** 帮助提示文本，显示在输入控件下方，用于指导用户 */
+  helperText?: string;
 }
 
 // 使用 ExtensionManager 管理配置项

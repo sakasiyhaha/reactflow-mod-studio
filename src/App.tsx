@@ -5,8 +5,8 @@
 // 主题色动态切换支持
 // 侧边栏按钮通过事件驱动
 // 新增：全局加载状态（导出/导入时显示遮罩）
+// 新增：动态导入自定义 Mod，隔离加载错误
 
-import { customMods } from '../custom-mods/index';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import type { Connection, Edge, OnNodesChange, OnEdgesChange, OnConnect } from '@xyflow/react';
@@ -38,16 +38,49 @@ import { generateEdgeId } from './utils';
 import './App.css';
 import { DEBUG } from '../config/debug';
 import type { CustomNode } from './utils/types';
+import type { EditorMod } from './bus/types';
 
 function AppInner() {
     const instance = useReactFlow();
     const { state, bus } = useEditorBus();
     const layout = useLayout();
 
+    // 动态导入自定义 Mod
+    const [customMods, setCustomMods] = useState<EditorMod[]>([]);
+    const [modsLoaded, setModsLoaded] = useState(false);
+
     useEffect(() => {
+        // 动态导入 custom-mods/index.ts
+        import('../custom-mods/index')
+            .then(module => {
+                const mods = module.customMods;
+                if (Array.isArray(mods)) {
+                    // 过滤无效的 Mod 对象（缺少 id 或 init）
+                    const validMods = mods.filter(m => m && typeof m.id === 'string' && typeof m.init === 'function');
+                    if (validMods.length !== mods.length) {
+                        console.warn('[App] 检测到无效的自定义 Mod，已过滤', mods.length - validMods.length);
+                    }
+                    setCustomMods(validMods);
+                } else {
+                    console.warn('[App] custom-mods/index.ts 导出的 customMods 不是数组，已忽略');
+                    setCustomMods([]);
+                }
+            })
+            .catch(err => {
+                console.error('[App] 加载自定义 Mod 失败，将只使用内置 Mod', err);
+                setCustomMods([]);
+            })
+            .finally(() => {
+                setModsLoaded(true);
+            });
+    }, []);
+
+    // 等待 Mod 加载完成后再初始化
+    useEffect(() => {
+        if (!modsLoaded) return;
         const cleanup = initMods(bus, customMods);
         return cleanup;
-    }, [bus]);
+    }, [bus, customMods, modsLoaded]);
 
     const [configPanelVisible, setConfigPanelVisible] = useState(false);
     const [floatingSearch, setFloatingSearch] = useState<{ x: number; y: number } | null>(null);
@@ -245,6 +278,16 @@ function AppInner() {
     const removeToast = useCallback((id: number) => {
         setToastMessages(prev => prev.filter(t => t.id !== id));
     }, []);
+
+    // 可选：加载自定义 Mod 期间显示 loading
+    if (!modsLoaded) {
+        return (
+            <div className="loading-mods">
+                <div className="loading-mods-spinner"></div>
+                <div className="loading-mods-text">正在加载编辑器插件...</div>
+            </div>
+        );
+    }
 
     return (
         <EditorBusProvider value={bus}>

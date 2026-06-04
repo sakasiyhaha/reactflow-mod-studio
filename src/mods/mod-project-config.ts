@@ -4,8 +4,11 @@
 // 这个 Mod 本身不持有 UI 状态，只负责事件 → 副作用的映射
 // 实际的 UI 状态（面板是否打开）仍在 App.tsx 中通过 useState 管理，
 // 但触发它的机制完全通过总线事件驱动，App.tsx 不再需要知道"谁"触发了面板切换
+//
+// 新增：注册内置配置字段（outputPath, rollbackPath）到注册中心，实现配置面板完全动态化
 
 import type { EditorMod, EditorBus } from '../bus/types';
+import { registerProjectConfigField } from '../registry/projectConfigRegistry';
 import { DEBUG } from '../../config/debug';
 
 // 模块私有变量：存储当前配置（与 useProjectConfig Hook 共享同一个 localStorage 键）
@@ -19,11 +22,38 @@ export const modProjectConfig: EditorMod = {
     init(bus: EditorBus) {
         if (DEBUG) console.log('[mod-project-config] 初始化');
 
+        // ========== 注册内置配置字段 ==========
+        // 输出目录字段
+        const unregisterOutputPath = registerProjectConfigField({
+            key: 'outputPath',
+            label: '输出目录',
+            type: 'string',
+            defaultValue: '',
+            placeholder: '例如：项目输出目录的绝对路径',
+            order: 10,
+            helperText: '模组生成的主输出目录，通常为项目的源码或构建输出目录。',
+        });
+
+        const unregisterRollbackPath = registerProjectConfigField({
+            key: 'rollbackPath',
+            label: '回滚备份目录',
+            type: 'string',
+            defaultValue: '',
+            placeholder: '例如：备份目录的绝对路径',
+            order: 20,
+            helperText: '用于存储回滚备份的目录，建议使用绝对路径并确保有足够的磁盘空间。',
+        });
+
         // 从 localStorage 加载初始配置
         try {
             const raw = localStorage.getItem('mc_project_config');
             if (raw) {
-                currentConfig = JSON.parse(raw);
+                const parsed = JSON.parse(raw);
+                currentConfig = {
+                    outputPath: parsed.outputPath ?? currentConfig.outputPath,
+                    rollbackPath: parsed.rollbackPath ?? currentConfig.rollbackPath,
+                };
+                if (DEBUG) console.log('[mod-project-config] 已加载已有配置', currentConfig);
             }
         } catch (e) {
             console.warn('[mod-project-config] 加载配置失败，使用默认值');
@@ -49,8 +79,10 @@ export const modProjectConfig: EditorMod = {
             }
         });
 
-        // 返回清理函数
+        // 返回清理函数：注销注册的字段并取消订阅
         return () => {
+            unregisterOutputPath();
+            unregisterRollbackPath();
             unsub();
             if (DEBUG) console.log('[mod-project-config] 已卸载');
         };
